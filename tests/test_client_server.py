@@ -69,7 +69,7 @@ async def test_single_client_send_hello_and_request_client_list(run_server):
     # The client list should include only one client (itself)
     assert len(client_list['servers'][0]['clients']) == 1
 
-    assert client_list['servers'][0]['clients'][0] == client.public_key
+    assert client_list['servers'][0]['clients'][0] == client.public_key.export_key().decode('utf-8')
 
 
 @pytest.mark.asyncio
@@ -83,8 +83,8 @@ async def test_single_client_send_message_to_self(run_server):
         await client.send_hello(websocket)
         await client.send_chat_message(
             websocket, 
-            client.server_uri,
-            client.public_key,
+            [client.server_uri],
+            [client.public_key],
             message_text
         )
         received_message = await client.listen_for_chat_message(websocket)
