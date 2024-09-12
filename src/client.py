@@ -69,6 +69,7 @@ class Client:
 
     async def send_hello(self, websocket):
         message = {
+            "type": "signed_data",
             "data": {
                 "type": "hello",
                 "public_key": self.public_key.export_key().decode("utf-8")
@@ -229,6 +230,7 @@ class Client:
                 elif action_answer["action"] == "Send message":
                     if len(self.client_info) == 0:
                         print("Currently no information about other clients. Please request client list first.")
+                        continue
                     
                     choices = [key for key in self.client_info]
                     message_prompt = [
