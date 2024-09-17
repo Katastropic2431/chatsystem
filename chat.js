@@ -3,26 +3,6 @@ let counter = 0;  // Monotonically increasing counter
 let username = prompt("Enter your username:");
 let publicKey = "Public Key Placeholder";  // Placeholder for public key
 
-// Function to update the recipient list dynamically
-function updateRecipientList(users) {
-    const recipientSelect = document.getElementById("recipient");
-    recipientSelect.innerHTML = '';  // Clear the current options
-
-    // Add an option to broadcast to everyone
-    const broadcastOption = document.createElement("option");
-    broadcastOption.value = "broadcast";
-    broadcastOption.textContent = "Broadcast (everyone)";
-    recipientSelect.appendChild(broadcastOption);
-
-    // Add other users to the select element
-    users.forEach(user => {
-        const option = document.createElement("option");
-        option.value = user.id;  // Assuming user has a unique 'id' field
-        option.textContent = user.name || user.id;  // Use name or id
-        recipientSelect.appendChild(option);
-    });
-}
-
 ws.onopen = async () => {
     console.log("Connected to the WebSocket server");
 
@@ -109,9 +89,16 @@ async function sendMessage() {
         "signature": signature
     };
     console.log(`Sending message with counter: ${counter}`);
-
     ws.send(JSON.stringify(chatMessage));
     input.value = "";  // Clear input after sending
+}
+
+async function requestClientList() {
+    let client_list = {
+        "type": "client_list_request",
+    }
+
+    ws.send(JSON.stringify(client_list));
 }
 
 // Function to generate RSA key pair and export them in PEM format
