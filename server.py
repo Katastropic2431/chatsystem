@@ -40,6 +40,7 @@ async def handle_client(websocket, path):
             
             if message_data["type"] == "client_list_request":
                 print("recieved")
+
             # Process hello message
             elif message_data["data"]["type"] == "hello":
                 print("Received hello message with public key:", message_data["data"]["public_key"])
