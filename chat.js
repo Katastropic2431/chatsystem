@@ -93,6 +93,14 @@ async function sendMessage() {
     input.value = "";  // Clear input after sending
 }
 
+async function requestClientList() {
+    let client_list = {
+        "type": "client_list_request",
+    }
+
+    ws.send(JSON.stringify(client_list));
+}
+
 // Function to generate RSA key pair and export them in PEM format
 async function generateKeyPair() {
     const keyPair = await window.crypto.subtle.generateKey({

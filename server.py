@@ -6,10 +6,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives import serialization
 
-client_counters = {}  # Dictionary to store the last counter value for each client
 connected_clients = {}  # Dictionary to store websocket connection and the last counter
-client_public_keys = {} # Dictionary to store public keys, keyed by WebSocket connection or client ID
-
+client_public_keys = {} # Dictionary to store public keys, keyed by WebSocket connection
 
 # Function to verify the signature
 def verify_signature(public_key_pem, signature, message, counter):
@@ -31,50 +29,6 @@ def get_public_key_for_client(websocket):
     # Return the public key for the given client (identified by WebSocket)
     return client_public_keys.get(websocket, None)
 
-# Handle incoming messages
-async def handle_message(websocket, path):
-    async for message in websocket:
-        data = json.loads(message)
-
-        # Check if the message is a "hello" message
-        if data['data']['type'] == "hello":
-            public_key_pem = data['data']['public_key']
-
-            # Store the public key for this client, using their WebSocket connection as the key
-            client_public_keys[websocket] = public_key_pem
-
-            print(f"Stored public key for client: {websocket.remote_address}")
-        elif data['type'] == "signed_data":
-            message_content = data['data']['message']
-            counter = data['counter']
-            signature = data['signature']
-
-            # Fetch the public key for this client
-            public_key = get_public_key_for_client(websocket)
-
-            # Continue with verification and counter validation...
-            if is_counter_valid(websocket, counter) and verify_signature(public_key, signature, message_content, counter):
-                print("Message verified and valid!")
-                # Process the message
-                client_counters[websocket] = counter  # Update the counter for this client
-            else:
-                print("Invalid message or possible replay attack!")
-
-
-
-def is_counter_valid(client, counter):
-    # Check if the counter is greater than the last stored counter
-    if client in client_counters:
-        if counter > client_counters[client]:
-            return True
-        else:
-            print(f"Replay attack detected: {counter} <= {client_counters[client]}")
-            return False
-    else:
-        # First time seeing this client, initialize their counter
-        client_counters[client] = counter
-        return True
-
 async def handle_client(websocket, path):
     # Register the new client by adding to connected_clients
     connected_clients[websocket] = {"counter": 0}
@@ -83,8 +37,12 @@ async def handle_client(websocket, path):
     try:
         async for message in websocket:
             message_data = json.loads(message)
+            
+            if message_data["type"] == "client_list_request":
+                print("recieved")
+
             # Process hello message
-            if message_data["data"]["type"] == "hello":
+            elif message_data["data"]["type"] == "hello":
                 print("Received hello message with public key:", message_data["data"]["public_key"])
 
             # Process signed_data messages
