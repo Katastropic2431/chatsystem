@@ -28,6 +28,16 @@ class Server:
             for address in neighbourhood_server_addresses
         ]
 
+    async def broadcast_client_update(self):
+        client_update = {
+            "type": "client_update",
+            "clients": list(self.clients.keys()),  # List of connected client public keys
+            "server_address": self.uri  # The address of the server sending the update
+        }
+        
+        for server in self.neighbourhood_servers:
+            if server.websocket is not None:
+                await server.websocket.send(json.dumps(client_update))
 
     async def handle_client(self, websocket, path):
         public_key = None
@@ -40,20 +50,26 @@ class Server:
                     if message["data"]["type"] == "hello":
                         print(f"Received hello message from client")
                         public_key = message["data"]["public_key"]
-                        self.clients[public_key] = websocket
-                        # await broadcast_client_update()
+                        self.clients[public_key] = websocket  # Store the public key of the new client
+                        await self.broadcast_client_update()  # Broadcast the new client list to neighbors
+                        print("Broadcasted client update to neighbors")
 
                     elif message["data"]["type"] == "chat":
-                        print("received chat message")
+                        print("Received chat message")
+
+                        # Check if the message is for a client on this server
                         if self.uri in message["data"]["destination_servers"]:
+                            # Send the message to the clients on this server
                             await self.broadcast_to_all_clients(message)
-                        # await self.forward_message_to_server(message)
+                        else:
+                            # Forward the message to the correct server(s)
+                            await self.forward_message_to_server(message)
 
                     elif message["data"]["type"] == "public_chat":
                         await self.broadcast_to_all_clients(message)
 
                 elif message["type"] == "client_list_request":
-                    print("received client_list_request")
+                    print("Received client_list_request")
                     await websocket.send(json.dumps(self.prepare_client_list()))
 
                 elif message["type"] == "client_update":
@@ -67,24 +83,33 @@ class Server:
                     if public_key in self.clients:
                         del self.clients[public_key]
                     await self.broadcast_client_update()
-                    print(f"connection closed: {e}")
+                    print(f"Connection closed: {e}")
                 break
 
 
-    async def forward_message_to_server(self, message):
-        destination_server = message["data"]["destination_servers"]
+    async def connect_to_neighbourhood(self):
         for server in self.neighbourhood_servers:
-            if server.server_address in destination_server:
+            try:
+                websocket = await websockets.connect(server.server_address)
+                server.websocket = websocket
+                print(f"Connected to neighbor {server.server_address}")
+                
+                # Request client update from the neighbor
+                await websocket.send(json.dumps({"type": "client_update_request"}))
+
+            except ConnectionRefusedError:
+                print(f"Failed to connect to {server.server_address}. Retrying...")
+                await asyncio.sleep(5)
+                asyncio.create_task(self.connect_to_neighbourhood())
+
+
+    async def forward_message_to_server(self, message):
+        destination_servers = message["data"]["destination_servers"]
+        for server in self.neighbourhood_servers:
+            if server.server_address in destination_servers:
+                print(f"Forwarding message to {server.server_address}")
                 await server.websocket.send(json.dumps(message))
 
-
-    async def broadcast_client_update(self):
-        client_update = {
-            "type": "client_update",
-            "clients": list(self.clients.keys())
-        }
-        for server in self.neighbourhood_servers:
-            await server.websocket.send(json.dumps(client_update))
 
 
     async def broadcast_to_all_clients(self, message):
@@ -93,34 +118,34 @@ class Server:
 
 
     async def handle_client_update(self, message):
-        # Extract the list of clients from the message
         updated_clients = message["clients"]
-
-        # Update the internal client list for this server
-        # Assuming we store the clients by server address
         server_address = message.get("server_address")
+
+        print(f"Received client update from {server_address} with {len(updated_clients)} clients")
+
+        # Update the internal list of clients for the neighbor server
         for server in self.neighbourhood_servers:
             if server.server_address == server_address:
-                server.clients = updated_clients
-
-        # Optionally, you can log or perform additional tasks based on the update
-        print(f"Received client update from {server_address}")
-
+                # Merge the client lists
+                for client in updated_clients:
+                    if client not in server.clients:
+                        server.clients.append(client)
+        
+        print(f"Updated clients for server {server_address}: {updated_clients}")
 
     async def handle_client_update_request(self, websocket):
         # Prepare the client update message with the list of connected clients
         client_update_message = {
             "type": "client_update",
-            "clients": list(self.clients.keys()),  # List of client fingerprints
-            "server_address": self.uri  # Replace with actual server address
+            "clients": list(self.clients.keys()),  # List of client public keys
+            "server_address": self.uri  # The server address sending the update
         }
 
-        # Send the update back to the requesting server
+        # Send the client update back to the requesting server
         await websocket.send(json.dumps(client_update_message))
 
-        # Optionally log the event
-        print("Sent client update in response to a client update request.")
-
+        # Log the event
+        print(f"Sent client update from {self.uri} to neighbor in response to request.")
 
     def prepare_client_list(self):
         client_list = {
@@ -133,13 +158,16 @@ class Server:
             ]
         }
 
+        # Include the clients from the neighbors
         for server in self.neighbourhood_servers:
             client_list["servers"].append({
                 "address": server.server_address,
-                "clients": server.clients
+                "clients": server.clients  # Add the clients from each neighboring server
             })
 
+        print(f"Prepared client list: {client_list}")
         return client_list
+
 
 
     async def server_handler(self):
@@ -151,21 +179,30 @@ class Server:
 
     async def connect_to_neighbourhood(self):
         for server in self.neighbourhood_servers:
-            # try to connect to other servers if they are already running
             try:
                 websocket = await websockets.connect(server.server_address)
-                server.websocket = websocket            
+                server.websocket = websocket
+                print(f"Connected to neighbor {server.server_address}")
+                
+                # Request client update from the neighbor
                 await websocket.send(json.dumps({"type": "client_update_request"}))
+
             except ConnectionRefusedError:
-                pass
+                print(f"Failed to connect to {server.server_address}. Retrying...")
+                await asyncio.sleep(5)
+                asyncio.create_task(self.connect_to_neighbourhood())
 
 
-if __name__ == "__main__":
+
+if __name__ == "__main__":  
     prompt = [
         inquirer.Text("address", message="Host address", default="127.0.0.1"),
         inquirer.Text("port", message="Host port", default="8000"),
+        inquirer.Text("neighbours", message="Comma-separated list of neighbour servers", default="ws://127.0.0.1:8001")
     ]
     config = inquirer.prompt(prompt)
     
-    server = Server(config["address"], config["port"])
+    neighbours = config["neighbours"].split(",") if config["neighbours"] else []
+    
+    server = Server(config["address"], config["port"], neighbours)
     asyncio.run(server.server_handler())
