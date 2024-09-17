@@ -79,18 +79,18 @@ async def handle_client(websocket, path):
     # Register the new client by adding to connected_clients
     connected_clients[websocket] = {"counter": 0}
     await notify_users(f"A user has joined the chat. Total users: {len(connected_clients)}")
-    
+
     try:
         async for message in websocket:
             message_data = json.loads(message)
-
             # Process hello message
             if message_data["data"]["type"] == "hello":
                 print("Received hello message with public key:", message_data["data"]["public_key"])
 
             # Process signed_data messages
-            if message_data["type"] == "signed_data":
+            elif message_data["type"] == "signed_data":
                 counter = message_data["counter"]
+                print(f'counter from message = {message_data["counter"]}')
                 # Check if the new counter is greater than the last stored counter
                 if counter > connected_clients[websocket]["counter"]:
                     connected_clients[websocket]["counter"] = counter  # Update the counter
