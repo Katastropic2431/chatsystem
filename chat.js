@@ -294,6 +294,10 @@ async function sendMessage() {
     const encryptedKey = await encryptAESKey(aesKey, publicKey);
     const encryptedKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedKey)));
 
+    // Log the encrypted message and key
+    console.log("Encrypted Message (Base64):", encryptedMessageBase64);
+    console.log("Encrypted AES Key (Base64):", encryptedKeyBase64);
+
     // Construct the chat message payload
     const chatMessage = {
         "type": "signed_data",
@@ -311,6 +315,12 @@ async function sendMessage() {
     console.log(`Sending encrypted message with counter: ${counter}`);
     ws.send(JSON.stringify(chatMessage));
     input.value = "";  // Clear input after sending
+
+    // Append the message to the chat box
+    const chatbox = document.getElementById("chatbox");
+    const messageElement = document.createElement("div");
+    messageElement.textContent = message;
+    chatbox.appendChild(messageElement);
 }
 
 async function requestClientList() {
