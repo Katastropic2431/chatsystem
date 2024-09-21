@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives import serialization
 
+serverlist = {} # Dictionary to store address and client public key
 connected_clients = {}  # Dictionary to store websocket connection and the last counter
 client_public_keys = {} # Dictionary to store public keys, keyed by WebSocket connection
 
@@ -31,19 +32,31 @@ def get_public_key_for_client(websocket):
 
 async def handle_client(websocket, path):
     # Register the new client by adding to connected_clients
-    connected_clients[websocket] = {"counter": 0}
-    await notify_users(f"A user has joined the chat. Total users: {len(connected_clients)}")
+
 
     try:
         async for message in websocket:
             message_data = json.loads(message)
             
             if message_data["type"] == "client_list_request":
-                print("recieved")
-
+                client_list = [public_key for websocket, public_key in client_public_keys.items()]
+                await websocket.send(json.dumps({
+                        "type": "client_list",
+                        "servers": [
+                            {
+                                "address": "localhost",  # Replace this with your actual server address
+                                "clients": client_list   # List of public keys
+                            }
+                        ]
+                    }))
+                
             # Process hello message
             elif message_data["data"]["type"] == "hello":
+                connected_clients[websocket] = {"counter": 0}
+                await notify_users(f"A user has joined the chat. Total users: {len(connected_clients)}")
                 print("Received hello message with public key:", message_data["data"]["public_key"])
+                client_public_keys[websocket] = {"publicKey": message_data["data"]["public_key"]}
+
 
             # Process signed_data messages
             elif message_data["type"] == "signed_data":
