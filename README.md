@@ -3,7 +3,7 @@ This Advanced Secure Programming assignment is designed to help students apply t
 
 To make it work you need Python3.6 or higher
 ```
-pip install websocket
+pip install websockets
 ```
 Open your terminal, navigate to the folder containing your main.html, and run:
 ```
@@ -15,5 +15,5 @@ http://localhost:8000/main.html
 ```
 Run server with:
 ```
-python3 testWebsockets.py
+python3 server.py
 ```
