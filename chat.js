@@ -3,6 +3,53 @@ let counter = 0;  // Monotonically increasing counter
 let username = prompt("Enter your username:");
 let publicKey = "Public Key Placeholder";  // Placeholder for public key
 let clientPublicKeys = {};  // Dictionary to store public keys keyed by client identifier
+let keyPair;
+let signingKeyPair;
+
+// RSA-OAEP key pair
+async function generateKeyPair() {
+    const keyPair = await window.crypto.subtle.generateKey({
+        name: "RSA-OAEP",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256"
+    }, true, ["encrypt", "decrypt"]);
+
+    // Export the public key in PEM format
+    const publicKeyBuffer = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+    const publicKeyPem = convertBinaryToPem(publicKeyBuffer, "PUBLIC KEY");
+
+    // Export the private key
+    const privateKeyBuffer = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+    const privateKeyPem = convertBinaryToPem(privateKeyBuffer, "PRIVATE KEY");
+
+    return { publicKeyPem, privateKey: keyPair.privateKey };
+}
+
+// RSA-PSS signing key pair
+async function generateSigningKeyPair() {
+    signingKeyPair = await window.crypto.subtle.generateKey({
+        name: "RSA-PSS",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256"
+    }, true, ["sign", "verify"]);
+
+    console.log('Generated Signing Key Pair:', signingKeyPair);
+}
+
+// Helper function to convert a buffer to a PEM formatted string
+function convertBinaryToPem(binaryData, label) {
+    const base64String = btoa(String.fromCharCode(...new Uint8Array(binaryData)));
+    const pemString = `-----BEGIN ${label}-----\n${base64String.match(/.{1,64}/g).join("\n")}\n-----END ${label}-----`;
+    return pemString;
+}
+
+// Initialize key pairs
+Promise.all([generateKeyPair(), generateSigningKeyPair()]).then(([keys]) => {
+    keyPair = keys;
+    console.log("Keys generated!", keys);
+});
 
 ws.onopen = async () => {
     console.log("Connected to the WebSocket server");
@@ -83,41 +130,83 @@ function convertPemToBinary(pem) {
     return buffer;
 }
 
+async function decryptMessage(encryptedMessageBase64, encryptedKeyBase64, ivBase64) {
+    try {
+        // Decode Base64 encoded values
+        const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
+        const encryptedMessage = Uint8Array.from(atob(encryptedMessageBase64), c => c.charCodeAt(0));
+        const encryptedKey = Uint8Array.from(atob(encryptedKeyBase64), c => c.charCodeAt(0));
+
+        console.log('IV:', iv);
+        console.log('Encrypted Message:', encryptedMessage);
+        console.log('Encrypted Key:', encryptedKey);
+
+        // Decrypt the AES key
+        const decryptedKeyBuffer = await window.crypto.subtle.decrypt(
+            {
+                name: "RSA-OAEP",
+            },
+            keyPair.privateKey,
+            encryptedKey
+        );
+
+        console.log('Decrypted AES Key Buffer:', decryptedKeyBuffer);
+
+        // Import the decrypted AES key
+        const aesKey = await window.crypto.subtle.importKey(
+            "raw",
+            decryptedKeyBuffer,
+            {
+                name: "AES-GCM",
+            },
+            true,
+            ["decrypt"]
+        );
+
+        console.log('Imported AES Key:', aesKey);
+
+        // Decrypt the message
+        const decryptedMessage = await window.crypto.subtle.decrypt(
+            {
+                name: "AES-GCM",
+                iv: iv,
+            },
+            aesKey,
+            encryptedMessage
+        );
+
+        console.log('Decrypted Message:', decryptedMessage);
+
+        const decoder = new TextDecoder();
+        return decoder.decode(decryptedMessage);
+    } catch (error) {
+        console.error('Error during decryption:', error);
+        throw error;
+    }
+}
+
 ws.onmessage = async (event) => {
     const chatbox = document.getElementById("chatbox");
 
     try {
         const parsedMessage = JSON.parse(event.data);
+        console.log("Received message:", parsedMessage);
 
         if (parsedMessage.data && parsedMessage.data.type === "chat") {
-            const iv = Uint8Array.from(atob(parsedMessage.data.iv), c => c.charCodeAt(0));
-            const encryptedMessage = Uint8Array.from(atob(parsedMessage.data.chat), c => c.charCodeAt(0));
-            const encryptedKey = Uint8Array.from(atob(parsedMessage.data.symm_keys[0]), c => c.charCodeAt(0));
+            console.log('Processing chat message');
+            const ivBase64 = parsedMessage.data.iv;
+            const encryptedMessageBase64 = parsedMessage.data.chat;
+            const encryptedKeyBase64 = parsedMessage.data.symm_keys[0];
 
-            // Decrypt the AES key
-            const aesKey = await window.crypto.subtle.decrypt(
-                {
-                    name: "RSA-OAEP",
-                },
-                keyPair.privateKey,
-                encryptedKey
-            );
+            console.log('IV Base64:', ivBase64);
+            console.log('Encrypted Message Base64:', encryptedMessageBase64);
+            console.log('Encrypted Key Base64:', encryptedKeyBase64);
 
-            // Decrypt the message
-            const decryptedMessage = await window.crypto.subtle.decrypt(
-                {
-                    name: "AES-GCM",
-                    iv: iv,
-                },
-                aesKey,
-                encryptedMessage
-            );
-
-            const decoder = new TextDecoder();
-            const message = decoder.decode(decryptedMessage);
+            const decryptedMessage = await decryptMessage(encryptedMessageBase64, encryptedKeyBase64, ivBase64);
+            console.log(`Decrypted message: ${decryptedMessage}`);
 
             const messageElement = document.createElement("div");
-            messageElement.textContent = message;
+            messageElement.textContent = decryptedMessage;
             chatbox.appendChild(messageElement);
         } else if (parsedMessage.type === "client_list") {
             const clientListContainer = document.createElement("div");
@@ -147,6 +236,7 @@ ws.onmessage = async (event) => {
             chatbox.appendChild(infoMessage);
         }
     } catch (e) {
+        console.error('Error processing message:', e);
         const errorMessage = document.createElement("div");
         errorMessage.textContent = "System Info: " + event.data;
         chatbox.appendChild(errorMessage);
@@ -158,7 +248,7 @@ async function signMessage(privateKey, message, counter) {
     const encoder = new TextEncoder();
     const dataToSign = encoder.encode(message + counter);
 
-    // Use RSA-PSS for signing, not RSA-OAEP
+    // Use RSA-PSS for signing
     const signature = await window.crypto.subtle.sign(
         {
             name: "RSA-PSS",
@@ -172,7 +262,6 @@ async function signMessage(privateKey, message, counter) {
     return btoa(String.fromCharCode(...new Uint8Array(signature)));  
 }
 
-
 async function sendMessage() {
     const input = document.getElementById("message");
     const recipientDropdown = document.getElementById("recipientDropdown");
@@ -180,6 +269,11 @@ async function sendMessage() {
 
     if (!selectedRecipient) {
         alert("Please select a recipient.");
+        return;
+    }
+
+    if (!signingKeyPair) {
+        alert("Signing key pair not initialized.");
         return;
     }
 
@@ -193,12 +287,12 @@ async function sendMessage() {
 
     // Encrypt the message
     const encryptedMessage = await encryptMessage(aesKey, iv, message);
-    const encryptedMessageBase64 = btoa(String.fromCharCode(...encryptedMessage));
+    const encryptedMessageBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedMessage)));
 
     // Encrypt the AES key for the selected recipient
     const publicKey = clientPublicKeys[selectedRecipient];
     const encryptedKey = await encryptAESKey(aesKey, publicKey);
-    const encryptedKeyBase64 = btoa(String.fromCharCode(...encryptedKey));
+    const encryptedKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedKey)));
 
     // Construct the chat message payload
     const chatMessage = {
@@ -206,12 +300,12 @@ async function sendMessage() {
         "data": {
             "type": "chat",
             "destination_servers": [selectedRecipient],  // Send to the selected recipient
-            "iv": btoa(String.fromCharCode(...iv)),
+            "iv": btoa(String.fromCharCode(...new Uint8Array(iv))),
             "symm_keys": [encryptedKeyBase64],
             "chat": encryptedMessageBase64
         },
         "counter": counter,
-        "signature": await signMessage(keyPair.privateKey, message, counter)
+        "signature": await signMessage(signingKeyPair.privateKey, message, counter)
     };
 
     console.log(`Sending encrypted message with counter: ${counter}`);
@@ -226,36 +320,3 @@ async function requestClientList() {
 
     ws.send(JSON.stringify(client_list));
 }
-
-// Function to generate RSA key pair and export them in PEM format
-async function generateKeyPair() {
-    const keyPair = await window.crypto.subtle.generateKey({
-        name: "RSA-PSS",
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]),
-        hash: "SHA-256"
-    }, true, ["sign", "verify"]);
-
-    // Export the public key in PEM format
-    const publicKeyBuffer = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
-    const publicKeyPem = convertBinaryToPem(publicKeyBuffer, "PUBLIC KEY");
-
-    // Export the private key
-    const privateKeyBuffer = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-    const privateKeyPem = convertBinaryToPem(privateKeyBuffer, "PRIVATE KEY");
-
-    return { publicKeyPem, privateKey: keyPair.privateKey };
-}
-
-// Helper function to convert a buffer to a PEM formatted string
-function convertBinaryToPem(binaryData, label) {
-    const base64String = btoa(String.fromCharCode(...new Uint8Array(binaryData)));
-    const pemString = `-----BEGIN ${label}-----\n${base64String.match(/.{1,64}/g).join("\n")}\n-----END ${label}-----`;
-    return pemString;
-}
-
-let keyPair;
-generateKeyPair().then(keys => {
-    keyPair = keys;
-    console.log("Keys generated!", keys);
-});
