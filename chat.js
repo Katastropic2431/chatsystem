@@ -35,6 +35,17 @@ ws.onmessage = (event) => {
             const message = document.createElement("div");
             message.textContent = parsedMessage.data.message;  // Display the chat message content
             chatbox.appendChild(message);
+        } else if (parsedMessage.type === "client_list") {
+            const clientListContainer = document.createElement("div");
+            clientListContainer.innerHTML = "<strong>Client Public Keys:</strong><br>";
+
+            parsedMessage.servers[0].clients.forEach(client => {
+                const clientKey = document.createElement("div");
+                clientKey.textContent = client.publicKey;
+                clientListContainer.appendChild(clientKey);
+            });
+
+            chatbox.appendChild(clientListContainer);
         } else {
             // For non-chat messages, you could log them or show them differently
             const infoMessage = document.createElement("div");
@@ -42,13 +53,12 @@ ws.onmessage = (event) => {
             chatbox.appendChild(infoMessage);
         }
     } catch (e) {
-        // If the message is not valid JSON, handle it as a plain text message 
-        const systemMessage = document.createElement("div");
-        systemMessage.textContent = event.data;  // Display the plain text message
-        chatbox.appendChild(systemMessage);
+        // If the message is not valid JSON, handle it as a plain text message
+        const errorMessage = document.createElement("div");
+        errorMessage.textContent = "System Info: " + event.data;
+        chatbox.appendChild(errorMessage);
     }
 };
-
 
 // Function to sign the message using the private key
 async function signMessage(privateKey, message, counter) {
