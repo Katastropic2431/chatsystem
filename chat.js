@@ -2,6 +2,7 @@ const ws = new WebSocket("ws://localhost:6789");
 let counter = 0;  // Monotonically increasing counter
 let username = prompt("Enter your username:");
 let publicKey = "Public Key Placeholder";  // Placeholder for public key
+let clientPublicKeys = {};  // Dictionary to store public keys keyed by client identifier
 
 ws.onopen = async () => {
     console.log("Connected to the WebSocket server");
@@ -15,6 +16,7 @@ ws.onopen = async () => {
         "type": "signed_data",
         "data": {
             "type": "hello",
+            "username": username,
             "public_key": publicKey
         },
         "counter": counter,
@@ -23,37 +25,128 @@ ws.onopen = async () => {
     ws.send(JSON.stringify(helloMessage));
 };
 
-ws.onmessage = (event) => {
+async function generateAESKey() {
+    return window.crypto.subtle.generateKey(
+        {
+            name: "AES-GCM",
+            length: 256,
+        },
+        true,
+        ["encrypt", "decrypt"]
+    );
+}
+
+async function encryptMessage(aesKey, iv, message) {
+    const encoder = new TextEncoder();
+    const encodedMessage = encoder.encode(message);
+    const ciphertext = await window.crypto.subtle.encrypt(
+        {
+            name: "AES-GCM",
+            iv: iv,
+        },
+        aesKey,
+        encodedMessage
+    );
+    return new Uint8Array(ciphertext);
+}
+
+async function encryptAESKey(aesKey, publicKeyPem) {
+    const publicKey = await window.crypto.subtle.importKey(
+        "spki",
+        convertPemToBinary(publicKeyPem),
+        {
+            name: "RSA-OAEP",
+            hash: "SHA-256",
+        },
+        true,
+        ["encrypt"]
+    );
+    const exportedKey = await window.crypto.subtle.exportKey("raw", aesKey);
+    const encryptedKey = await window.crypto.subtle.encrypt(
+        {
+            name: "RSA-OAEP",
+        },
+        publicKey,
+        exportedKey
+    );
+    return new Uint8Array(encryptedKey);
+}
+
+function convertPemToBinary(pem) {
+    const base64 = pem.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\s+/g, '');
+    const binary = atob(base64);
+    const buffer = new ArrayBuffer(binary.length);
+    const view = new Uint8Array(buffer);
+    for (let i = 0; i < binary.length; i++) {
+        view[i] = binary.charCodeAt(i);
+    }
+    return buffer;
+}
+
+ws.onmessage = async (event) => {
     const chatbox = document.getElementById("chatbox");
 
     try {
-        // Try to parse the incoming message as JSON
         const parsedMessage = JSON.parse(event.data);
 
-        // Check the type of the message and display only the relevant content
         if (parsedMessage.data && parsedMessage.data.type === "chat") {
-            const message = document.createElement("div");
-            message.textContent = parsedMessage.data.message;  // Display the chat message content
-            chatbox.appendChild(message);
+            const iv = Uint8Array.from(atob(parsedMessage.data.iv), c => c.charCodeAt(0));
+            const encryptedMessage = Uint8Array.from(atob(parsedMessage.data.chat), c => c.charCodeAt(0));
+            const encryptedKey = Uint8Array.from(atob(parsedMessage.data.symm_keys[0]), c => c.charCodeAt(0));
+
+            // Decrypt the AES key
+            const aesKey = await window.crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                keyPair.privateKey,
+                encryptedKey
+            );
+
+            // Decrypt the message
+            const decryptedMessage = await window.crypto.subtle.decrypt(
+                {
+                    name: "AES-GCM",
+                    iv: iv,
+                },
+                aesKey,
+                encryptedMessage
+            );
+
+            const decoder = new TextDecoder();
+            const message = decoder.decode(decryptedMessage);
+
+            const messageElement = document.createElement("div");
+            messageElement.textContent = message;
+            chatbox.appendChild(messageElement);
         } else if (parsedMessage.type === "client_list") {
             const clientListContainer = document.createElement("div");
             clientListContainer.innerHTML = "<strong>Client Public Keys:</strong><br>";
 
+            const recipientDropdown = document.getElementById("recipientDropdown");
+            recipientDropdown.innerHTML = '<option value="">Select a recipient</option>';  // Clear existing options
+
             parsedMessage.servers[0].clients.forEach(client => {
                 const clientKey = document.createElement("div");
-                clientKey.textContent = client.publicKey;
+                clientKey.textContent = `${client.username}: ${client.publicKey}`;
                 clientListContainer.appendChild(clientKey);
-            });
 
+                // Store the public key
+                clientPublicKeys[client.username] = client.publicKey;
+
+                // Add option to dropdown
+                const option = document.createElement("option");
+                option.value = client.username;
+                option.textContent = client.username;  // Display client username
+                recipientDropdown.appendChild(option);
+            });
             chatbox.appendChild(clientListContainer);
         } else {
-            // For non-chat messages, you could log them or show them differently
             const infoMessage = document.createElement("div");
-            infoMessage.textContent = "Info: " + parsedMessage.data;  // Handle non-chat messages
+            infoMessage.textContent = "Info: " + parsedMessage.data;
             chatbox.appendChild(infoMessage);
         }
     } catch (e) {
-        // If the message is not valid JSON, handle it as a plain text message
         const errorMessage = document.createElement("div");
         errorMessage.textContent = "System Info: " + event.data;
         chatbox.appendChild(errorMessage);
@@ -82,23 +175,46 @@ async function signMessage(privateKey, message, counter) {
 
 async function sendMessage() {
     const input = document.getElementById("message");
+    const recipientDropdown = document.getElementById("recipientDropdown");
+    const selectedRecipient = recipientDropdown.value;
+
+    if (!selectedRecipient) {
+        alert("Please select a recipient.");
+        return;
+    }
+
     const message = `${username}: ${input.value}`;
     
     counter += 1;  // Increment counter for replay prevention
     
-    // Sign the message + counter
-    const signature = await signMessage(keyPair.privateKey, message, counter);
+    // Generate AES key and IV
+    const aesKey = await generateAESKey();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));  // AES-GCM IV is 12 bytes
 
-    let chatMessage = {
+    // Encrypt the message
+    const encryptedMessage = await encryptMessage(aesKey, iv, message);
+    const encryptedMessageBase64 = btoa(String.fromCharCode(...encryptedMessage));
+
+    // Encrypt the AES key for the selected recipient
+    const publicKey = clientPublicKeys[selectedRecipient];
+    const encryptedKey = await encryptAESKey(aesKey, publicKey);
+    const encryptedKeyBase64 = btoa(String.fromCharCode(...encryptedKey));
+
+    // Construct the chat message payload
+    const chatMessage = {
         "type": "signed_data",
         "data": {
             "type": "chat",
-            "message": message
+            "destination_servers": [selectedRecipient],  // Send to the selected recipient
+            "iv": btoa(String.fromCharCode(...iv)),
+            "symm_keys": [encryptedKeyBase64],
+            "chat": encryptedMessageBase64
         },
         "counter": counter,
-        "signature": signature
+        "signature": await signMessage(keyPair.privateKey, message, counter)
     };
-    console.log(`Sending message with counter: ${counter}`);
+
+    console.log(`Sending encrypted message with counter: ${counter}`);
     ws.send(JSON.stringify(chatMessage));
     input.value = "";  // Clear input after sending
 }

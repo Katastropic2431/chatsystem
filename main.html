@@ -6,6 +6,9 @@
 <body>
     <h1>WebSocket Chat</h1>
     <div id="chatbox"></div>
+    <select id="recipientDropdown">
+        <option value="">Select a recipient</option>
+    </select>
     <input type="text" id="message" placeholder="Type a message...">
     <button onclick="sendMessage()">Send</button>
     <button onclick="requestClientList()">Request Client List</button>
