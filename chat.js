@@ -255,7 +255,6 @@ async function signMessage(privateKey, data, counter) {
     // Concatenate data string and counter
     const message = dataString + counter;
     
-    // Create SHA-256 hash of the message
     const encoder = new TextEncoder();
     const messageBuffer = encoder.encode(message);
     
