@@ -196,18 +196,30 @@ ws.onmessage = async (event) => {
             console.log('Processing chat message');
             const ivBase64 = parsedMessage.data.iv;
             const encryptedMessageBase64 = parsedMessage.data.chat;
-            const encryptedKeyBase64 = parsedMessage.data.symm_keys[0];
+            
+            // Find the correct encrypted key for the current user
+            const recipientUsername = username;  // Assume the current user is the recipient
+            const recipientIndex = parsedMessage.data.destination_servers.indexOf(recipientUsername);
+            if (recipientIndex === -1) {
+                console.error('Recipient not found in destination servers');
+                return;
+            }
+            const encryptedKeyBase64 = parsedMessage.data.symm_keys[recipientIndex];
 
             console.log('IV Base64:', ivBase64);
             console.log('Encrypted Message Base64:', encryptedMessageBase64);
             console.log('Encrypted Key Base64:', encryptedKeyBase64);
 
-            const decryptedMessage = await decryptMessage(encryptedMessageBase64, encryptedKeyBase64, ivBase64);
-            console.log(`Decrypted message: ${decryptedMessage}`);
+            try {
+                const decryptedMessage = await decryptMessage(encryptedMessageBase64, encryptedKeyBase64, ivBase64);
+                console.log(`Decrypted message: ${decryptedMessage}`);
 
-            const messageElement = document.createElement("div");
-            messageElement.textContent = decryptedMessage;
-            chatbox.appendChild(messageElement);
+                const messageElement = document.createElement("div");
+                messageElement.textContent = decryptedMessage;
+                chatbox.appendChild(messageElement);
+            } catch (error) {
+                console.error('Error decrypting message:', error);
+            }
         } else if (parsedMessage.type === "client_list") {
             const clientListContainer = document.createElement("div");
             clientListContainer.innerHTML = "<strong>Client Public Keys:</strong><br>";
@@ -265,10 +277,10 @@ async function signMessage(privateKey, message, counter) {
 async function sendMessage() {
     const input = document.getElementById("message");
     const recipientDropdown = document.getElementById("recipientDropdown");
-    const selectedRecipient = recipientDropdown.value;
+    const selectedRecipients = Array.from(recipientDropdown.selectedOptions).map(option => option.value);
 
-    if (!selectedRecipient) {
-        alert("Please select a recipient.");
+    if (selectedRecipients.length === 0) {
+        alert("Please select at least one recipient.");
         return;
     }
 
@@ -289,23 +301,25 @@ async function sendMessage() {
     const encryptedMessage = await encryptMessage(aesKey, iv, message);
     const encryptedMessageBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedMessage)));
 
-    // Encrypt the AES key for the selected recipient
-    const publicKey = clientPublicKeys[selectedRecipient];
-    const encryptedKey = await encryptAESKey(aesKey, publicKey);
-    const encryptedKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedKey)));
+    // Encrypt the AES key for each selected recipient
+    const encryptedKeysBase64 = await Promise.all(selectedRecipients.map(async recipient => {
+        const publicKey = clientPublicKeys[recipient];
+        const encryptedKey = await encryptAESKey(aesKey, publicKey);
+        return btoa(String.fromCharCode(...new Uint8Array(encryptedKey)));
+    }));
 
-    // Log the encrypted message and key
+    // Log the encrypted message and keys
     console.log("Encrypted Message (Base64):", encryptedMessageBase64);
-    console.log("Encrypted AES Key (Base64):", encryptedKeyBase64);
+    console.log("Encrypted AES Keys (Base64):", encryptedKeysBase64);
 
     // Construct the chat message payload
     const chatMessage = {
         "type": "signed_data",
         "data": {
             "type": "chat",
-            "destination_servers": [selectedRecipient],  // Send to the selected recipient
+            "destination_servers": selectedRecipients,  // Send to the selected recipients
             "iv": btoa(String.fromCharCode(...new Uint8Array(iv))),
-            "symm_keys": [encryptedKeyBase64],
+            "symm_keys": encryptedKeysBase64,
             "chat": encryptedMessageBase64
         },
         "counter": counter,
