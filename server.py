@@ -89,6 +89,8 @@ async def handle_client(websocket, path):
                     connected_clients[websocket]["counter"] = counter  # Update the counter
                     if message_data["data"]["type"] == "chat":
                         await forward_message(message_data)  # Forward the chat message to the intended recipients
+                    if message_data["data"]["type"] == "public_chat":
+                        await broadcast_message(message_data)  
                 else:
                     print("Replay attack detected: Counter is not greater than the last counter.")
 
@@ -115,7 +117,7 @@ async def broadcast_message(message):
     # Broadcast the message to all connected clients
     for client in list(connected_clients.keys()):
         try:
-            await client.send(message)
+            await client.send(json.dumps(message))
         except Exception as e:
             print(f"Error sending message to client: {e}")
             # Optionally, remove the client from the list of connected clients

@@ -234,7 +234,12 @@ ws.onmessage = async (event) => {
                 recipientDropdown.appendChild(option);
             });
             chatbox.appendChild(clientListContainer);
-        } else {
+        } else if (parsedMessage.data.type === "public_chat") {
+            const messageElement = document.createElement("div");
+            messageElement.textContent = parsedMessage.data.message;
+            chatbox.appendChild(messageElement);
+        }
+        else {
             const infoMessage = document.createElement("div");
             infoMessage.textContent = "Info: " + parsedMessage.data;
             chatbox.appendChild(infoMessage);
@@ -273,6 +278,36 @@ async function signMessage(privateKey, data, counter) {
     const signatureBase64 = btoa(String.fromCharCode(...signatureArray));
     
     return signatureBase64;
+}
+
+// Function to get fingerprint from public key
+async function getFingerprintFromPublicKeyPEM(publicKeyPem){
+    const publicKeyBinary = convertPemToBinary(publicKeyPem);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', publicKeyBinary);
+    // Convert hashBuffer to a Base64 string
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashString = String.fromCharCode(...hashArray);
+    const hashBase64 = btoa(hashString);
+
+    return hashBase64;
+}
+
+async function sendPublicMessage() {
+    const input = document.getElementById("message");
+    const message = `${username}: ${input.value}`;
+    counter += 1;  // Increment counter for replay prevention
+    data = {
+        "type": "public_chat",
+        "sender": getFingerprintFromPublicKeyPEM(encryptionPublicKey),
+        "message": message
+    }
+    const publicMessage = {
+        "type": "signed_data",
+        "data": data,
+        "counter": counter,
+        "signature": await signMessage(signingKeyPair.privateKey, data, counter)
+    };
+    ws.send(JSON.stringify(publicMessage));
 }
 
 async function sendMessage() {
