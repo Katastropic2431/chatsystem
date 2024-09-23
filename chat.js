@@ -55,7 +55,8 @@ ws.onopen = async () => {
         "data": {
             "type": "hello",
             "username": username,
-            "public_key": encryptionPublicKey
+            "public_key": encryptionPublicKey,
+            "signing_key": signingPublicKey,
         },
         "counter": counter,
         "signature": "<Base64 signature of data + counter>"  // Signature not required for "hello"
@@ -254,10 +255,8 @@ async function signMessage(privateKey, data, counter) {
     // Concatenate data string and counter
     const message = dataString + counter;
     
-    // Create SHA-256 hash of the message
     const encoder = new TextEncoder();
     const messageBuffer = encoder.encode(message);
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', messageBuffer);
     
     // Sign the hash using the private key with RSA-PSS
     const signatureBuffer = await window.crypto.subtle.sign(
@@ -266,7 +265,7 @@ async function signMessage(privateKey, data, counter) {
             saltLength: 32
         },
         privateKey,
-        hashBuffer
+        messageBuffer
     );
     
     // Encode the signature in Base64 format

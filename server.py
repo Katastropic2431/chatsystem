@@ -11,15 +11,31 @@ connected_clients = {}  # Dictionary to store websocket connection and the last 
 client_public_keys = {} # Dictionary to store public keys, keyed by WebSocket connection
 
 # Function to verify the signature
-def verify_signature(public_key_pem, signature, message, counter):
-    public_key = serialization.load_pem_public_key(public_key_pem)
-    message_to_verify = message + str(counter)
-
+def verify_signature(websocket, signature, data, counter):
+    # Get the signing pem key for the client
+    if websocket not in client_public_keys:
+        print("Client not found")
+        return False
+    
+    signing_pem = client_public_keys[websocket]["signingKey"].encode('utf-8')
+    signing_key = serialization.load_pem_public_key(signing_pem)
+    data_string = json.dumps(data, separators=(',', ':'))
+    message_to_verify = data_string + str(counter)
+    message_bytes = message_to_verify.encode('utf-8')
+    
+    # Decode the Base64 signature
+    signature_bytes = base64.b64decode(signature)
+    
+    # Verify the signature using the public key with RSA-PSS
     try:
-        public_key.verify(
-            base64.b64decode(signature),
-            message_to_verify.encode(),
-            padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+        signing_key.verify(
+            signature_bytes,
+            message_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=32
+            ),
+            hashes.SHA256()
         )
         return True
     except Exception as e:
@@ -51,13 +67,21 @@ async def handle_client(websocket, path):
             elif message_data["data"]["type"] == "hello":
                 username = message_data["data"]["username"]
                 public_key = message_data["data"]["public_key"]
+                signing_key = message_data["data"]["signing_key"]
                 connected_clients[websocket] = {"counter": 0}
                 await notify_users(f"{username} has joined the chat. Total users: {len(connected_clients)}")
                 print(f"Received hello message from {username} with public key: {public_key}")
-                client_public_keys[websocket] = {"username": username, "publicKey": public_key}
+                client_public_keys[websocket] = {"username": username, "publicKey": public_key, "signingKey": signing_key}
 
             # Process signed_data messages
             elif message_data["type"] == "signed_data":
+                # Verify the signature
+                verify_signature_result = verify_signature(websocket, message_data["signature"], message_data["data"], message_data["counter"])
+                if not verify_signature_result:
+                    #send error message
+                    await websocket.send("Signature verification failed")
+                    return
+                print(f"Signature verification result: {verify_signature_result}")
                 counter = message_data["counter"]
                 print(f'counter from message = {message_data["counter"]}')
                 # Check if the new counter is greater than the last stored counter
