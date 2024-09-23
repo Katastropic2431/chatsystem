@@ -77,6 +77,10 @@ async def handle_client(websocket, path):
             elif message_data["type"] == "signed_data":
                 # Verify the signature
                 verify_signature_result = verify_signature(websocket, message_data["signature"], message_data["data"], message_data["counter"])
+                if not verify_signature_result:
+                    #send error message
+                    await websocket.send("Signature verification failed")
+                    return
                 print(f"Signature verification result: {verify_signature_result}")
                 counter = message_data["counter"]
                 print(f'counter from message = {message_data["counter"]}')
