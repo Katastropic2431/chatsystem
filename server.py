@@ -71,15 +71,18 @@ async def handle_client(websocket, path):
     finally:
         # Unregister the client
         del connected_clients[websocket]
+        del client_public_keys[websocket]
         await notify_users(f"A user has left the chat. Total users: {len(connected_clients)}")
 
 async def forward_message(message_data):
     # Forward the message to the specified recipients
+    print(f"Forwarding message: {message_data}")
     recipients = message_data["data"]["destination_servers"]
     for client, client_info in client_public_keys.items():
         if client_info["username"] in recipients:
             try:
                 await client.send(json.dumps(message_data))
+                print(f"Message forwarded to {client_info['username']}")
             except Exception as e:
                 print(f"Error sending message to client: {e}")
                 del connected_clients[client]
