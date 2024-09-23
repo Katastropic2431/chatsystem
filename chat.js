@@ -1,14 +1,15 @@
 const ws = new WebSocket("ws://localhost:6789");
 let counter = 0;  // Monotonically increasing counter
 let username = prompt("Enter your username:");
-let publicKey = "Public Key Placeholder";  // Placeholder for public key
 let clientPublicKeys = {};  // Dictionary to store public keys keyed by client identifier
-let keyPair;
+let encryptionPublicKey = "Public Key Placeholder";  // Placeholder for public key
+let signingPublicKey = "Public Key Placeholder";  // Placeholder for public key
+let encryptionKeyPair;
 let signingKeyPair;
 
 // RSA-OAEP key pair
 async function generateKeyPair() {
-    const keyPair = await window.crypto.subtle.generateKey({
+    encryptionKeyPair = await window.crypto.subtle.generateKey({
         name: "RSA-OAEP",
         modulusLength: 2048,
         publicExponent: new Uint8Array([1, 0, 1]),
@@ -16,14 +17,8 @@ async function generateKeyPair() {
     }, true, ["encrypt", "decrypt"]);
 
     // Export the public key in PEM format
-    const publicKeyBuffer = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
-    const publicKeyPem = convertBinaryToPem(publicKeyBuffer, "PUBLIC KEY");
-
-    // Export the private key
-    const privateKeyBuffer = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-    const privateKeyPem = convertBinaryToPem(privateKeyBuffer, "PRIVATE KEY");
-
-    return { publicKeyPem, privateKey: keyPair.privateKey };
+    const publicKeyBuffer = await window.crypto.subtle.exportKey("spki", encryptionKeyPair.publicKey);
+    encryptionPublicKey = convertBinaryToPem(publicKeyBuffer, "PUBLIC KEY");
 }
 
 // RSA-PSS signing key pair
@@ -35,7 +30,9 @@ async function generateSigningKeyPair() {
         hash: "SHA-256"
     }, true, ["sign", "verify"]);
 
-    console.log('Generated Signing Key Pair:', signingKeyPair);
+    // Export the public key in PEM format
+    const publicKeyBuffer = await window.crypto.subtle.exportKey("spki", signingKeyPair.publicKey);
+    signingPublicKey = convertBinaryToPem(publicKeyBuffer, "PUBLIC KEY");
 }
 
 // Helper function to convert a buffer to a PEM formatted string
@@ -45,18 +42,12 @@ function convertBinaryToPem(binaryData, label) {
     return pemString;
 }
 
-// Initialize key pairs
-Promise.all([generateKeyPair(), generateSigningKeyPair()]).then(([keys]) => {
-    keyPair = keys;
-    console.log("Keys generated!", keys);
-});
-
 ws.onopen = async () => {
     console.log("Connected to the WebSocket server");
 
     // Generate RSA key pair
-    keyPair = await generateKeyPair();
-    publicKey = keyPair.publicKeyPem;  // Assign the exported public key
+    await generateKeyPair();
+    await generateSigningKeyPair();
 
     // Send hello message with the actual public key
     let helloMessage = {
@@ -64,7 +55,7 @@ ws.onopen = async () => {
         "data": {
             "type": "hello",
             "username": username,
-            "public_key": publicKey
+            "public_key": encryptionPublicKey
         },
         "counter": counter,
         "signature": "<Base64 signature of data + counter>"  // Signature not required for "hello"
@@ -146,7 +137,7 @@ async function decryptMessage(encryptedMessageBase64, encryptedKeyBase64, ivBase
             {
                 name: "RSA-OAEP",
             },
-            keyPair.privateKey,
+            encryptionKeyPair.privateKey,
             encryptedKey
         );
 
@@ -256,22 +247,33 @@ ws.onmessage = async (event) => {
 };
 
 // Function to sign the message using the private key
-async function signMessage(privateKey, message, counter) {
+async function signMessage(privateKey, data, counter) {
+    // Convert data object to JSON string
+    const dataString = JSON.stringify(data);
+    
+    // Concatenate data string and counter
+    const message = dataString + counter;
+    
+    // Create SHA-256 hash of the message
     const encoder = new TextEncoder();
-    const dataToSign = encoder.encode(message + counter);
-
-    // Use RSA-PSS for signing
-    const signature = await window.crypto.subtle.sign(
+    const messageBuffer = encoder.encode(message);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', messageBuffer);
+    
+    // Sign the hash using the private key with RSA-PSS
+    const signatureBuffer = await window.crypto.subtle.sign(
         {
-            name: "RSA-PSS",
-            saltLength: 32,  // Recommended salt length for RSA-PSS
+            name: 'RSA-PSS',
+            saltLength: 32
         },
         privateKey,
-        dataToSign
+        hashBuffer
     );
-
-    // Return the Base64-encoded signature
-    return btoa(String.fromCharCode(...new Uint8Array(signature)));  
+    
+    // Encode the signature in Base64 format
+    const signatureArray = new Uint8Array(signatureBuffer);
+    const signatureBase64 = btoa(String.fromCharCode(...signatureArray));
+    
+    return signatureBase64;
 }
 
 async function sendMessage() {
@@ -313,17 +315,18 @@ async function sendMessage() {
     console.log("Encrypted AES Keys (Base64):", encryptedKeysBase64);
 
     // Construct the chat message payload
+    const data = {
+        "type": "chat",
+        "destination_servers": selectedRecipients,  // Send to the selected recipients
+        "iv": btoa(String.fromCharCode(...new Uint8Array(iv))),
+        "symm_keys": encryptedKeysBase64,
+        "chat": encryptedMessageBase64
+    };
     const chatMessage = {
         "type": "signed_data",
-        "data": {
-            "type": "chat",
-            "destination_servers": selectedRecipients,  // Send to the selected recipients
-            "iv": btoa(String.fromCharCode(...new Uint8Array(iv))),
-            "symm_keys": encryptedKeysBase64,
-            "chat": encryptedMessageBase64
-        },
+        "data": data,
         "counter": counter,
-        "signature": await signMessage(signingKeyPair.privateKey, message, counter)
+        "signature": await signMessage(signingKeyPair.privateKey, data, counter)
     };
 
     console.log(`Sending encrypted message with counter: ${counter}`);
