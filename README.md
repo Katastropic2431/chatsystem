@@ -6,7 +6,7 @@ Currently the code is only tested with python 3.12.
 ## Execution
 Installation
 ```
-pip install -r requirements.txt
+pip install websockets
 ```
 
 Open your terminal, navigate to the `src` and run:
@@ -16,15 +16,9 @@ python server.py
 
 Then open another terminal to run:
 ```
-python client.py
+http://localhost:8000/main.html
 ```
-
-## Todo
-- Counter and signature in the message
-- Multiple servers
-- File transfer
-- Security backdoor
-
-## Some Notes
-- Reading user input should be an asychronous operation to avoid blocking the whole process
-- The tests are not working right now
+Run server with:
+```
+python3 server.py
+```
