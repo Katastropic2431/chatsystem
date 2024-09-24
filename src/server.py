@@ -1,7 +1,12 @@
 import asyncio
+import base64
 import websockets
+import hashlib
 import json
 import inquirer
+from Crypto.Hash import SHA256
+from Crypto.Signature import pss
+from Crypto.PublicKey import RSA
 from dataclasses import dataclass, field
 
 @dataclass
@@ -9,6 +14,20 @@ class RemoteServer:
     server_address: str = ""
     websocket: object = None
     clients: list = field(default_factory=list)
+
+# Verify a signature using PSS with SHA-256
+def verify_signature(data: str, counter: int, signature: str, public_key) -> bool:
+    data = json.dumps(data) + str(counter)
+    h = SHA256.new(data.encode('utf-8'))
+    verifier = pss.new(public_key, salt_bytes=32)
+    try:
+        verifier.verify(h, base64.b64decode(signature))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+def get_fingerprint(public_key: RSA.RsaKey) -> str:
+    return hashlib.sha256(public_key.export_key()).hexdigest()
 
 
 class Server:
@@ -20,6 +39,8 @@ class Server:
     ):
         # Dict of client's public key to its websocket connection
         self.clients = {}
+        # Dict of client's public key to its counter
+        self.clients_counters = {}
         self.address = address
         self.port = port 
         self.uri = f"ws://{address}:{port}"
@@ -29,7 +50,7 @@ class Server:
         ]
 
 
-    async def handle_client(self, websocket, path):
+    async def handle_client(self, websocket):
         public_key = None
         while True:
             try:
@@ -38,18 +59,36 @@ class Server:
 
                 if message["type"] == "signed_data":
                     if message["data"]["type"] == "hello":
+                        if not verify_signature(message["data"], message["counter"],message["signature"], RSA.import_key(message["data"]["public_key"])):
+                            print("Signature verification failed")
+                            return
                         print(f"Received hello message from client")
                         public_key = message["data"]["public_key"]
                         self.clients[public_key] = websocket
+                        self.clients_counters[public_key] = 0
                         # await broadcast_client_update()
+                        pub_key = list(self.clients.keys())[list(self.clients.values()).index(websocket)]
+                        if not verify_signature(message["data"], message["counter"], message["signature"], RSA.import_key(pub_key)):
+                            print("Signature verification failed")
+                            return
+                        else:
+                            print("Signature verification successful")
 
                     elif message["data"]["type"] == "chat":
                         print("received chat message")
+                        if message["counter"] < self.clients_counters[public_key]:
+                            print("Replay attack detected: Counter is not greater than the last counter.")
+                            return
+                        self.clients_counters[public_key] = message["counter"]
                         if self.uri in message["data"]["destination_servers"]:
                             await self.broadcast_to_all_clients(message)
                         # await self.forward_message_to_server(message)
 
                     elif message["data"]["type"] == "public_chat":
+                        if message["counter"] < self.clients_counters[public_key]:
+                            print("Replay attack detected: Counter is not greater than the last counter.")
+                            return
+                        self.clients_counters[public_key] = message["counter"]
                         await self.broadcast_to_all_clients(message)
 
                 elif message["type"] == "client_list_request":

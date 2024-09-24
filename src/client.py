@@ -3,19 +3,19 @@ import websockets
 import base64
 import hashlib
 import json
-import sys
 import inquirer
 from concurrent.futures import ThreadPoolExecutor
-from time import sleep
 from json.decoder import JSONDecodeError
 from Crypto.PublicKey import RSA
+from Crypto.Signature import pss
+from Crypto.Hash import SHA256
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Random import get_random_bytes
 
 
 # AES Encryption for the message:
 def aes_encrypt(message: str, key: bytes, iv: bytes) -> str:
-    cipher = AES.new(key, AES.MODE_CFB, iv)
+    cipher = AES.new(key, AES.MODE_GCM, iv)
     encrypted_message = cipher.encrypt(message.encode("utf-8"))
     return base64.b64encode(encrypted_message).decode("utf-8")
 
@@ -25,7 +25,7 @@ def aes_decrypt(encrypted_message: str, key: bytes, iv: bytes) -> str:
     encrypted_message_bytes = base64.b64decode(encrypted_message)
     
     # Initialize the cipher with the same key and IV used for encryption
-    cipher = AES.new(key, AES.MODE_CFB, iv)
+    cipher = AES.new(key, AES.MODE_GCM, iv)
     
     # Decrypt the message
     decrypted_message = cipher.decrypt(encrypted_message_bytes)
@@ -35,7 +35,7 @@ def aes_decrypt(encrypted_message: str, key: bytes, iv: bytes) -> str:
 
 
 def rsa_encrypt_aes_key(aes_key: bytes, recipient_public_key: RSA.RsaKey) -> str:
-    cipher_rsa = PKCS1_OAEP.new(recipient_public_key)
+    cipher_rsa = PKCS1_OAEP.new(key=recipient_public_key, hashAlgo=SHA256.new())
     encrypted_key = cipher_rsa.encrypt(aes_key)
     return base64.b64encode(encrypted_key).decode("utf-8")
 
@@ -45,13 +45,32 @@ def rsa_decrypt_aes_key(encrypted_aes_key_b64: str, recipient_private_key: RSA.R
     encrypted_aes_key = base64.b64decode(encrypted_aes_key_b64)
     
     # Initialize the cipher using the RSA private key and PKCS1_OAEP
-    cipher_rsa = PKCS1_OAEP.new(recipient_private_key)
+    cipher_rsa = PKCS1_OAEP.new(recipient_private_key, hashAlgo=SHA256.new())
     
     # Decrypt the AES key
     aes_key = cipher_rsa.decrypt(encrypted_aes_key)
     
     return aes_key
 
+# Sign a message using PSS with SHA-256
+def sign_message(data: dict, counter: int, private_key) -> str:
+    data = json.dumps(data) + str(counter)
+    h = SHA256.new(data.encode('utf-8'))
+    signer = pss.new(private_key, salt_bytes=32)
+    signature = signer.sign(h)
+    return base64.b64encode(signature).decode('utf-8')
+
+
+# Verify a signature using PSS with SHA-256
+def verify_signature(data: str, counter: int, signature: str, public_key) -> bool:
+    data = json.dumps(data) + str(counter)
+    h = SHA256.new(data.encode('utf-8'))
+    verifier = pss.new(public_key, salt_bytes=32)
+    try:
+        verifier.verify(h, base64.b64decode(signature))
+        return True
+    except (ValueError, TypeError):
+        return False
 
 def get_fingerprint(public_key: RSA.RsaKey) -> str:
     return hashlib.sha256(public_key.export_key()).hexdigest()
@@ -60,20 +79,25 @@ def get_fingerprint(public_key: RSA.RsaKey) -> str:
 class Client:
     def __init__(self, server_uri):
         # Generate or load RSA keys
-        self.private_key = RSA.generate(2048)
+        self.private_key = RSA.generate(bits=2048, e=65537)
         self.public_key = self.private_key.publickey()
         self.fingerprint = get_fingerprint(self.public_key)
         self.server_uri = server_uri
         self.client_info = {} # mapping each client's public key to its server
+        self.counter = 0
 
 
     async def send_hello(self, websocket):
+        data = {
+            "type": "hello",
+            "public_key": self.public_key.export_key().decode("utf-8")
+        }
+        signiture = sign_message(data, self.counter, self.private_key)
         message = {
             "type": "signed_data",
-            "data": {
-                "type": "hello",
-                "public_key": self.public_key.export_key().decode("utf-8")
-            }
+            "data": data,
+            "counter": self.counter,
+            "signature": signiture
         }
         await websocket.send(json.dumps(message))
 
@@ -109,7 +133,7 @@ class Client:
             }
         }
         """
-        
+        self.counter += 1
         # Generate AES key and IV
         aes_key = get_random_bytes(32)
         iv = get_random_bytes(16)
@@ -132,13 +156,32 @@ class Client:
             "chat": encrypted_chat
         }
 
+        signiture = sign_message(data, self.counter, self.private_key)
+
         full_message = {
             "type": "signed_data",
-            "data": data
+            "data": data,
+            "counter": self.counter,
+            "signature": signiture
         }
 
         await websocket.send(json.dumps(full_message))
 
+    async def send_public_message(self, websocket, message_text):
+        self.counter += 1
+        data = {
+            "type": "public_chat",
+            "sender": self.fingerprint,
+            "message": message_text
+        }
+        signiture = sign_message(data, self.counter, self.private_key)
+        full_message = {
+            "type": "signed_data",
+            "data": data,
+            "counter": self.counter,
+            "signature": signiture
+        }
+        await websocket.send(json.dumps(full_message))
 
     async def request_client_list(self, websocket):
         message = {
@@ -189,10 +232,18 @@ class Client:
                     self.cache_client_info(message_json)   
                     print(json.dumps(message_json, indent=2))
                 elif message_json["type"] == "signed_data":
-                    text, sender = self.extract_chat_message(message_json)
-                    if text is not None:
-                        print(f"Sender: {sender}")
-                        print(f"Text: {text}")
+                    if message_json["data"]["type"] == "chat":
+                        text, sender = self.extract_chat_message(message_json)
+                        if text is not None:
+                            print(f"Sender: {sender}")
+                            print(f"Text: {text}")
+                    elif message_json["data"]["type"] == "public_chat":
+                        print(f"Public message received:")
+                        text = message_json["data"]["message"]
+                        sender = message_json["data"]["sender"]
+                        if text is not None:
+                            print(f"Sender: {sender}")
+                            print(f"Text: {text}")
 
         except websockets.ConnectionClosed:
             print(f"Connection closed.")
@@ -216,7 +267,7 @@ class Client:
         action_prompt = [
             inquirer.List("action",
                 message="Please select an action",
-                choices=["Request client list", "Send message", "Quit"],
+                choices=["Request client list", "Send message", "Send public message", "Quit"],
             ),
         ]
         
@@ -253,6 +304,14 @@ class Client:
                         public_keys,
                         message_answers["message"]
                     )
+
+                elif action_answer["action"] == "Send public message":
+                    message_prompt = [
+                        inquirer.Text("message", message="Please input text message"),
+                    ]
+                    message_answers = await self.ask_user_async(loop, message_prompt)
+                    await self.send_public_message(websocket, message_answers["message"])
+
                 elif action_answer["action"] == "Quit":
                     print("Closing connection...")
                     await websocket.close()
