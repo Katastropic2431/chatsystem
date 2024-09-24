@@ -84,6 +84,8 @@ class Client:
         self.fingerprint = get_fingerprint(self.public_key)
         self.server_uri = server_uri
         self.client_info = {} # mapping each client's public key to its server
+        self.fingerprint_to_public_key = {} # mapping each client's fingerprint to its public key
+        self.fingerprint_to_public_key[self.fingerprint] = self.public_key.export_key().decode("utf-8") # Add the client's own public key
         self.counter = 0
 
 
@@ -200,12 +202,18 @@ class Client:
             except ValueError:
                 # The aes key is not correct
                 continue
-            
             try:
                 decrypted_chat = aes_decrypt(encrypted_chat, aes_key, iv)
                 decrypted_json = json.loads(decrypted_chat)
                 message = decrypted_json["message"]
                 sender = decrypted_json["participants"][0]
+                # Verify the signature of the chat message
+                if sender not in self.fingerprint_to_public_key:
+                    print("Unknown sender, please request client list first")
+                    return
+                if not verify_signature(chat_message["data"], chat_message["counter"], chat_message["signature"], RSA.import_key(self.fingerprint_to_public_key[sender])):
+                    print("Signature verification failed")
+                    return None, None
                 return message, sender
             except JSONDecodeError as e:
                 print("Unknown message format")
@@ -220,7 +228,7 @@ class Client:
         for server in client_list["servers"]:
             for client in server["clients"]:
                 self.client_info[client] = server["address"]
-
+                self.fingerprint_to_public_key[get_fingerprint(RSA.import_key(client))] = client
     
     async def listen_for_messages(self, websocket):
         try:
@@ -238,9 +246,14 @@ class Client:
                             print(f"Sender: {sender}")
                             print(f"Text: {text}")
                     elif message_json["data"]["type"] == "public_chat":
-                        print(f"Public message received:")
                         text = message_json["data"]["message"]
                         sender = message_json["data"]["sender"]
+                        if sender not in self.fingerprint_to_public_key:
+                            print("Unknown sender, please request client list first")
+                            return
+                        if not verify_signature(message_json["data"], message_json["counter"], message_json["signature"], RSA.import_key(self.fingerprint_to_public_key[sender])):
+                            print("Signature verification failed")
+                            return
                         if text is not None:
                             print(f"Sender: {sender}")
                             print(f"Text: {text}")
@@ -318,7 +331,7 @@ class Client:
                     break
 
                 # Wait for some time so that the user can see the response
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
 
         except websockets.ConnectionClosed:
             print(f"Connection closed.")
