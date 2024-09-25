@@ -22,10 +22,9 @@ http://localhost:8000/main.html
 ```
 
 Open your terminal, navigate to the `src` and run:
-
+```
 python server.py
 ```
-
 Then open another terminal to run:
 ```
 http://localhost:8000/main.html
