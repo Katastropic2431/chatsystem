@@ -1,0 +1,126 @@
+body {
+    overflow: hidden;
+    margin: 0;
+}
+
+h1 {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.main{
+    width: 100%;
+    height: 88%;
+    position: absolute;
+    background-color: #00d7ff47;
+    left: 0;
+}
+
+.leftColumn{
+    position: absolute;
+    width: 280px;
+    left: 0;
+    height: 100%;
+    border-right: 2px solid #80808099;
+    overflow-y: auto;
+}
+
+.rightColumn{
+    position: absolute;
+    width: calc(100% - 280px);
+    right: 0;
+    height: 100%;
+}
+
+.leftTopBar{
+    width: 100%;
+    height: 10%;
+    border-bottom: 2px solid #80808099;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.chatBoxBox{
+    width: 100%;
+    top: 10%;
+    height: 90%;
+    position: absolute;
+}
+
+.chatBoxSelector{
+    width: 100%;
+    height: 100px;
+    border-bottom: 2px solid #80808099;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+}
+
+.chatBoxSelector:hover{
+    background-color: #edfcff;
+}
+
+.rightTopBar{
+    width: 100%;
+    height: 10%;
+    border-bottom: 2px solid #80808099;
+}
+
+#message{
+    position: absolute;
+    width: calc(100% - 3px);
+    height: 25%;
+    padding: 0;
+    bottom: 0;
+    left: 1px;
+    font-size: 1.5rem;
+    font-family: sans-serif;
+}
+
+.messageSubmitBtn{
+    position: absolute;
+    right: 6%;
+    bottom: 18px;
+}
+
+#chatbox{
+    height: 75%;
+    overflow-y: auto;
+    background-color: #edfcff;
+    width: calc(100% - 2px);
+    left: 2px;
+    position: absolute;
+}
+
+.groupMember{
+    right: 0;
+    height: 100%;
+    width: 200px;
+    position: absolute;
+    border-left: 2px solid #80808099;
+    z-index: 3;
+}
+
+.chatArea{
+    left: 0;
+    position: absolute;
+    width: calc(100% - 200px);
+    height: 90%;
+}
+
+.groupMemberName{
+    height: 5%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.groupMemberList {
+    top: 5%;
+    height: 73%;
+}

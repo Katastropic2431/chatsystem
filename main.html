@@ -2,17 +2,40 @@
 <html>
 <head>
     <title>WebSocket Chat</title>
+    <link rel="stylesheet" href="main.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.js"></script>
+    <script src="vue.js" defer></script>
 </head>
 <body>
     <h1>WebSocket Chat</h1>
-    <div id="chatbox"></div>
-    <select id="recipientDropdown" multiple>
-        <option value="">Select a recipient</option>
-    </select>
-    <input type="text" id="message" placeholder="Type a message...">
-    <button onclick="sendMessage()">Send</button>
-    <button onclick="sendPublicMessage()">Public Chat</button>
-    <button onclick="requestClientList()">Request Client List</button>
+    <div class="main">
+        <div class="leftColumn">
+            <div class="leftTopBar">Chat Box</div>
+            <div class="chatBoxBox">
+                            <!-- the selector for each chat box is called class="chatBoxSelector" where in the left bar you click onto it to select which chat to go -->
+             <div class="chatBoxSelector">Sample chat1</div>
+             <div class="chatBoxSelector">Sample chat2</div>
+             <div class="chatBoxSelector">Sample chat3</div>
+             <!-- <div class="chatBoxSelector">Sample chat3</div>
+             <div class="chatBoxSelector">Sample chat3</div>
+             <div class="chatBoxSelector">Sample chat3</div>
+             <div class="chatBoxSelector">Sample chat3</div> -->
+            </div>
+        </div>
+        <div class="rightColumn">
+            <div class="rightTopBar"></div>
+            <div class="groupMember">
+                <div class="groupMemberName">Group Member</div>
+                <div class="groupMemberList"></div>
+            </div>
+            <div class="chatArea">
+                <div id="chatbox"></div>
+                <textarea id="message" placeholder="Type a message..."></textarea>
+                <button class="messageSubmitBtn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
     <script src="chat.js"></script>
 </body>
 </html>
