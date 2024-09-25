@@ -2,8 +2,11 @@ import asyncio
 import websockets
 import base64
 import hashlib
+import requests # for making HTTP requests
 import json
+import os
 import inquirer
+from pathlib import Path  # add this import to handle file paths
 from concurrent.futures import ThreadPoolExecutor
 from json.decoder import JSONDecodeError
 from Crypto.PublicKey import RSA
@@ -274,13 +277,68 @@ class Client:
             result = await loop.run_in_executor(pool, self.ask_user, prompt)
             return result
 
+    async def upload_file(self, websocket):
+        """Uploads a file to the Flask server and shares the download link."""
+        loop = asyncio.get_event_loop()
+
+        file_prompt = [
+            inquirer.Text("file_path", message="Enter the full path of the file to upload")
+        ]
+        file_answer = await self.ask_user_async(loop, file_prompt)
+
+        file_path = file_answer['file_path']
+        if not Path(file_path).is_file():
+            print(f"File not found: {file_path}")
+            return
+        
+        # Upload file to Flask server
+        files = {'file': open(file_path, 'rb')}
+        try:
+            response = requests.post(f'http://127.0.0.1:5000/api/upload', files=files)
+            response_data = response.json()
+            if response.status_code == 200:
+                file_url = response_data.get('file_url')
+                print(f"File uploaded successfully. URL: {file_url}")
+
+                # Send the file URL as a chat message
+                await self.send_public_message(websocket, f"File shared: {file_url}")
+            else:
+                print(f"Failed to upload file: {response_data.get('error')}")
+        except Exception as e:
+            print(f"Error uploading file: {e}")
+
+    async def download_file(self):
+        """Downloads a file from the given URL and saves it locally."""
+        file_url = input("Enter the URL of the file to download: ")
+
+        if not file_url:
+            print("File URL not provided or invalid input.")
+            return
+
+        try:
+            response = requests.get(file_url)
+            if response.status_code == 200:
+                # Ensure the download directory exists
+                download_dir = "/tmp/downloads"
+                os.makedirs(download_dir, exist_ok=True)
+
+                # Get file name from URL and save the file
+                file_name = file_url.split("/")[-1]
+                file_path = os.path.join(download_dir, file_name)
+                with open(file_path, 'wb') as f:
+                    f.write(response.content)
+                print(f"File downloaded successfully and saved at: {file_path}")
+            else:
+                print(f"Failed to download file: {response.status_code}")
+        except Exception as e:
+            print(f"Error downloading file: {e}")
     
     async def read_inputs(self, websocket):
         loop = asyncio.get_event_loop()
         action_prompt = [
             inquirer.List("action",
                 message="Please select an action",
-                choices=["Request client list", "Send message", "Send public message", "Quit"],
+                choices=["Request client list", "Send message", "Send public message", "Upload file", "Download file", "Quit"],
             ),
         ]
         
@@ -324,7 +382,10 @@ class Client:
                     ]
                     message_answers = await self.ask_user_async(loop, message_prompt)
                     await self.send_public_message(websocket, message_answers["message"])
-
+                elif action_answer["action"] == "Upload file":
+                    await self.upload_file(websocket)
+                elif action_answer["action"] == "Download file":
+                    await self.download_file()
                 elif action_answer["action"] == "Quit":
                     print("Closing connection...")
                     await websocket.close()
