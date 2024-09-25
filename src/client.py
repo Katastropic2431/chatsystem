@@ -86,6 +86,8 @@ class Client:
         self.client_info = {} # mapping each client's public key to its server
         self.fingerprint_to_public_key = {} # mapping each client's fingerprint to its public key
         self.fingerprint_to_public_key[self.fingerprint] = self.public_key.export_key().decode("utf-8") # Add the client's own public key
+        self.public_key_to_counter = {}
+        self.public_key_to_counter[self.public_key.export_key().decode("utf-8")] = 0
         self.counter = 0
 
 
@@ -229,6 +231,9 @@ class Client:
             for client in server["clients"]:
                 self.client_info[client] = server["address"]
                 self.fingerprint_to_public_key[get_fingerprint(RSA.import_key(client))] = client
+                # add the client to the counter list
+                if client not in self.public_key_to_counter:
+                    self.public_key_to_counter[client] = 0
     
     async def listen_for_messages(self, websocket):
         try:
@@ -242,12 +247,24 @@ class Client:
                 elif message_json["type"] == "signed_data":
                     if message_json["data"]["type"] == "chat":
                         text, sender = self.extract_chat_message(message_json)
+                        # Check for relay attack
+                        if message_json["counter"] <= self.public_key_to_counter[self.fingerprint_to_public_key[sender]]:
+                            print("Relay attack detected")
+                            continue
+                        # Update the counter
+                        self.public_key_to_counter[self.fingerprint_to_public_key[sender]] = message_json["counter"]
                         if text is not None:
                             print(f"Sender: {sender}")
                             print(f"Text: {text}")
                     elif message_json["data"]["type"] == "public_chat":
                         text = message_json["data"]["message"]
                         sender = message_json["data"]["sender"]
+                        # Check for relay attack
+                        if message_json["counter"] <= self.public_key_to_counter[sender]:
+                            print("Relay attack detected")
+                            continue
+                        # Update the counter
+                        self.public_key_to_counter[sender] = message_json["counter"]
                         if sender not in self.fingerprint_to_public_key:
                             print("Unknown sender, please request client list first")
                             return
@@ -340,6 +357,7 @@ class Client:
     async def client_handler(self):
         async with websockets.connect(self.server_uri) as websocket:
             await self.send_hello(websocket)
+            await self.request_client_list(websocket)
             await asyncio.gather(
                 self.listen_for_messages(websocket),
                 self.read_inputs(websocket)

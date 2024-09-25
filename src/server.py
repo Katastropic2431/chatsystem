@@ -50,7 +50,6 @@ class Server:
         # Dict of client's public key to its websocket connection
         self.clients = {}
         # Dict of client's public key to its counter
-        self.clients_counters = {}
         self.address = address
         self.port = port
         self.counter = 0
@@ -82,7 +81,6 @@ class Server:
                         print(f"Received hello message from client")
                         public_key = message["data"]["public_key"]
                         self.clients[public_key] = websocket
-                        self.clients_counters[public_key] = 0
                         pub_key = list(self.clients.keys())[list(self.clients.values()).index(websocket)]
                         if not verify_signature(message["data"], message["counter"], message["signature"], RSA.import_key(pub_key)):
                             print("Signature verification failed")
@@ -92,20 +90,11 @@ class Server:
                         await self.broadcast_client_update()
 
                     elif message["data"]["type"] == "chat":
-                        print("received chat message")
-                        if message["counter"] < self.clients_counters[public_key]:
-                            print("Replay attack detected: Counter is not greater than the last counter.")
-                            return
-                        self.clients_counters[public_key] = message["counter"]
                         if self.uri in message["data"]["destination_servers"]:
                             await self.broadcast_to_all_clients(message)
                         await self.forward_message_to_server(message)
 
                     elif message["data"]["type"] == "public_chat":
-                        if message["counter"] < self.clients_counters[public_key]:
-                            print("Replay attack detected: Counter is not greater than the last counter.")
-                            return
-                        self.clients_counters[public_key] = message["counter"]
                         await self.broadcast_to_all_clients(message)
                         await self.flood_servers_with_message(message)
 
@@ -118,9 +107,9 @@ class Server:
                                     print("Replay attack detected: Counter is not greater than the last counter.")
                                     return
                                 # Check if the signature is valid
-                                if not verify_signature(message["data"], message["counter"], message["signature"], RSA.import_key(server.public_key)):
-                                    print("Signature verification failed")
-                                    return
+                                # if not verify_signature(message["data"], message["counter"], message["signature"], RSA.import_key(server.public_key)):
+                                #     print("Signature verification failed")
+                                #     return
                                 # Connection established
                                 print(f"Connected to server {server.server_address}")
                                 server.websocket = websocket
@@ -250,11 +239,11 @@ class Server:
             while True:
                 server_address = inquirer.prompt([inquirer.Text("server_address", message="Enter the address of the neighboring server (or leave blank to finish)", default="127.0.0.1:8000")])["server_address"]
                 if not server_address: break
-                server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
-                if not server_public_key: break
-                # decode the base64 encoded public key
-                server_public_key = base64.b64decode(server_public_key)
-                self.neighbourhood_servers.append(RemoteServer(server_address=f"ws://{server_address}", public_key=server_public_key))
+                # server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
+                # if not server_public_key: break
+                # # decode the base64 encoded public key
+                # server_public_key = base64.b64decode(server_public_key)
+                self.neighbourhood_servers.append(RemoteServer(server_address=f"ws://{server_address}"))
                 print(f"Added server {server_address} to the neighborhood")
 
 
