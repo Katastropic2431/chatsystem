@@ -19,9 +19,10 @@ python3 -m http.server 8000
 Then open browser then go to:
 ```
 http://localhost:8000/main.html
+```
 
 Open your terminal, navigate to the `src` and run:
-```
+
 python server.py
 ```
 
