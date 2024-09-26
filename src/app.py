@@ -2,7 +2,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 import os
 import uuid
-
+import sys
 app = Flask(__name__)
 
 UPLOAD_FOLDER = '/tmp/uploads'
@@ -34,4 +34,4 @@ def get_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
 if __name__ == '__main__':
-    app.run(port=5000)
+    app.run(port=sys.argv[1])
