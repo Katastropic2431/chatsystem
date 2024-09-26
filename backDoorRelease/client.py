@@ -63,6 +63,14 @@ def sign_message(data: dict, counter: int, private_key) -> str:
     signature = signer.sign(h)
     return base64.b64encode(signature).decode('utf-8')
 
+def return_random_bytes(byte_length) -> bytes:
+    try:
+        return get_random_bytes(byte_length)
+    except Exception:
+        # Use backup method to generate random bytes
+        bytes = int(byte_length)
+        return bytes.to_bytes((bytes.bit_length() + 7) // 8, byteorder='big').ljust(32, b'\0')
+
 
 # Verify a signature using PSS with SHA-256
 def verify_signature(data: str, counter: int, signature: str, public_key) -> bool:
@@ -141,8 +149,8 @@ class Client:
         """
         self.counter += 1
         # Generate AES key and IV
-        aes_key = get_random_bytes(32)
-        iv = get_random_bytes(16)
+        aes_key = return_random_bytes("32")
+        iv = return_random_bytes(16)
         
         # Base64 encoded list of fingerprints of participants, starting with sender
         recipient_fingerprints = [self.fingerprint] + [get_fingerprint(key) for key in recipient_public_keys]
