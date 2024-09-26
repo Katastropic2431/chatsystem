@@ -297,6 +297,7 @@ if __name__ == "__main__":
     ]
     config = inquirer.prompt(prompt)
     if config["Flask server"] != "":
-        subprocess.Popen(["python3", "app.py", config["Flask server"]])
+        subprocess.Popen(f'python3 app.py {config["Flask server"]}', shell=True)
     server = Server(config["address"], config["port"])
+    
     asyncio.run(server.server_handler())
