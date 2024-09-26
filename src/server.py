@@ -81,22 +81,34 @@ class Server:
                         print(f"Received hello message from client")
                         public_key = message["data"]["public_key"]
                         self.clients[public_key] = websocket
-                        pub_key = list(self.clients.keys())[list(self.clients.values()).index(websocket)]
-                        if not verify_signature(message["data"], message["counter"], message["signature"], RSA.import_key(pub_key)):
-                            print("Signature verification failed")
-                            return
-                        else:
-                            print("Signature verification successful")
                         await self.broadcast_client_update()
 
                     elif message["data"]["type"] == "chat":
-                        if self.uri in message["data"]["destination_servers"]:
-                            await self.broadcast_to_all_clients(message)
-                        await self.forward_message_to_server(message)
+                        from_server = False
+                        # if message came from server, broadcast it to all clients if the server is in the destination list
+                        for server in self.neighbourhood_servers:
+                            if server.websocket == websocket:
+                                from_server = True
+                                if self.uri in message["data"]["destination_servers"]:
+                                    await self.broadcast_to_all_clients(message)
+
+                        # If the message came from a client, forward it to the destination servers
+                        if not from_server:
+                            if self.uri in message["data"]["destination_servers"]:
+                                await self.broadcast_to_all_clients(message)
+                            await self.forward_message_to_server(message)
 
                     elif message["data"]["type"] == "public_chat":
-                        await self.broadcast_to_all_clients(message)
-                        await self.flood_servers_with_message(message)
+                        # if the message came from a server, broadcast it to all clients
+                        from_server = False
+                        for server in self.neighbourhood_servers:
+                            if server.websocket == websocket:
+                                from_server = True
+                                # broadcast the message to all clients
+                                await self.broadcast_to_all_clients(message)
+                        if not from_server:
+                            await self.broadcast_to_all_clients(message)
+                            await self.flood_servers_with_message(message)
 
                     elif message["data"]["type"] == "server_hello":
                         # Find the server in the neighbourhood_servers list
@@ -107,9 +119,9 @@ class Server:
                                     print("Replay attack detected: Counter is not greater than the last counter.")
                                     return
                                 # Check if the signature is valid
-                                # if not verify_signature(message["data"], message["counter"], message["signature"], RSA.import_key(server.public_key)):
-                                #     print("Signature verification failed")
-                                #     return
+                                if not verify_signature(message["data"], message["counter"], message["signature"], RSA.import_key(server.public_key)):
+                                    print("Signature verification failed")
+                                    return
                                 # Connection established
                                 print(f"Connected to server {server.server_address}")
                                 server.websocket = websocket
@@ -168,9 +180,7 @@ class Server:
     async def handle_client_update(self, message, websocket):
         # Extract the list of clients from the message
         updated_clients = message["clients"]
-
         # Update the internal client list for this server
-        # Assuming we store the clients by server address
         for server in self.neighbourhood_servers:
             if websocket == server.websocket:
                 server.clients = updated_clients
@@ -239,11 +249,12 @@ class Server:
             while True:
                 server_address = inquirer.prompt([inquirer.Text("server_address", message="Enter the address of the neighboring server (or leave blank to finish)", default="127.0.0.1:8000")])["server_address"]
                 if not server_address: break
-                # server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
-                # if not server_public_key: break
-                # # decode the base64 encoded public key
-                # server_public_key = base64.b64decode(server_public_key)
-                self.neighbourhood_servers.append(RemoteServer(server_address=f"ws://{server_address}"))
+                server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
+                if not server_public_key: break
+                # decode the base64 encoded public key
+                ### ADD SOME ERROR HANDLING HERE ###
+                server_public_key = base64.b64decode(server_public_key)
+                self.neighbourhood_servers.append(RemoteServer(server_address=f"ws://{server_address}", public_key=server_public_key))
                 print(f"Added server {server_address} to the neighborhood")
 
 

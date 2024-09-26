@@ -86,8 +86,7 @@ class Client:
         self.client_info = {} # mapping each client's public key to its server
         self.fingerprint_to_public_key = {} # mapping each client's fingerprint to its public key
         self.fingerprint_to_public_key[self.fingerprint] = self.public_key.export_key().decode("utf-8") # Add the client's own public key
-        self.public_key_to_counter = {}
-        self.public_key_to_counter[self.public_key.export_key().decode("utf-8")] = 0
+        self.fingerprint_to_counter = {}
         self.counter = 0
 
 
@@ -144,6 +143,8 @@ class Client:
         
         # Base64 encoded list of fingerprints of participants, starting with sender
         recipient_fingerprints = [self.fingerprint] + [get_fingerprint(key) for key in recipient_public_keys]
+        # base 64 encode the fingerprints
+        recipient_fingerprints = [base64.b64encode(fingerprint.encode('utf-8')).decode('utf-8') for fingerprint in recipient_fingerprints]
         chat_message = {
             "participants": recipient_fingerprints,
             "message": message_text
@@ -175,7 +176,7 @@ class Client:
         self.counter += 1
         data = {
             "type": "public_chat",
-            "sender": self.fingerprint,
+            "sender": base64.b64encode(self.fingerprint.encode('utf-8')).decode('utf-8'),
             "message": message_text
         }
         signiture = sign_message(data, self.counter, self.private_key)
@@ -193,8 +194,19 @@ class Client:
         }
         await websocket.send(json.dumps(message))
 
+    def check_for_relay_attack(self, sender, counter) -> bool:
+        if sender not in self.fingerprint_to_counter:
+            # add the sender to the list of known clients
+            self.fingerprint_to_counter[sender] = counter
+            return False
+        elif counter <= self.fingerprint_to_counter[sender]:
+            print("Relay attack detected")
+            return True
+        self.fingerprint_to_counter[sender] = counter
+        return False
 
-    def extract_chat_message(self, chat_message):
+    def extract_chat_message(self, chat_message) -> tuple:
+        """Function that extracts a direct chat message"""
         iv = base64.b64decode(chat_message["data"]["iv"])
         encrypted_chat = chat_message["data"]["chat"]
 
@@ -209,10 +221,15 @@ class Client:
                 decrypted_json = json.loads(decrypted_chat)
                 message = decrypted_json["message"]
                 sender = decrypted_json["participants"][0]
+                # decode the sender fingerprint
+                sender = base64.b64decode(sender).decode("utf-8")
+                # Check for relay attack
+                if self.check_for_relay_attack(sender, chat_message["counter"]):
+                    return None, None
                 # Verify the signature of the chat message
                 if sender not in self.fingerprint_to_public_key:
-                    print("Unknown sender, please request client list first")
-                    return
+                    print("Unknown sender cannot verify signature please ensure you have the most recent client list")
+                    return None, None
                 if not verify_signature(chat_message["data"], chat_message["counter"], chat_message["signature"], RSA.import_key(self.fingerprint_to_public_key[sender])):
                     print("Signature verification failed")
                     return None, None
@@ -225,15 +242,30 @@ class Client:
         
         return None, None
 
+    def extract_public_chat(self, public_chat) -> tuple:
+        """Function that extracts a public chat message"""
+        try:
+            message = public_chat["data"]["message"]
+            sender = public_chat["data"]["sender"]
+            # decode the sender fingerprint
+            sender = base64.b64decode(sender).decode("utf-8")
+            # Check for relay attack
+            if self.check_for_relay_attack(sender, public_chat["counter"]):
+                return None, None
+            return message, sender
+        except JSONDecodeError as e:
+            print("Unknown message format")
+        except Exception as e:
+            # Handle any other exceptions
+            print(f"An unexpected error occurred: {e}")
+
 
     def cache_client_info(self, client_list):
+        self.finger_print_to_public_key = {}
         for server in client_list["servers"]:
             for client in server["clients"]:
                 self.client_info[client] = server["address"]
                 self.fingerprint_to_public_key[get_fingerprint(RSA.import_key(client))] = client
-                # add the client to the counter list
-                if client not in self.public_key_to_counter:
-                    self.public_key_to_counter[client] = 0
     
     async def listen_for_messages(self, websocket):
         try:
@@ -247,33 +279,14 @@ class Client:
                 elif message_json["type"] == "signed_data":
                     if message_json["data"]["type"] == "chat":
                         text, sender = self.extract_chat_message(message_json)
-                        # Check for relay attack
-                        if message_json["counter"] <= self.public_key_to_counter[self.fingerprint_to_public_key[sender]]:
-                            print("Relay attack detected")
-                            continue
-                        # Update the counter
-                        self.public_key_to_counter[self.fingerprint_to_public_key[sender]] = message_json["counter"]
-                        if text is not None:
-                            print(f"Sender: {sender}")
-                            print(f"Text: {text}")
                     elif message_json["data"]["type"] == "public_chat":
-                        text = message_json["data"]["message"]
-                        sender = message_json["data"]["sender"]
-                        # Check for relay attack
-                        if message_json["counter"] <= self.public_key_to_counter[sender]:
-                            print("Relay attack detected")
-                            continue
-                        # Update the counter
-                        self.public_key_to_counter[sender] = message_json["counter"]
-                        if sender not in self.fingerprint_to_public_key:
-                            print("Unknown sender, please request client list first")
-                            return
-                        if not verify_signature(message_json["data"], message_json["counter"], message_json["signature"], RSA.import_key(self.fingerprint_to_public_key[sender])):
-                            print("Signature verification failed")
-                            return
-                        if text is not None:
-                            print(f"Sender: {sender}")
-                            print(f"Text: {text}")
+                        text, sender = self.extract_public_chat(message_json)
+                    else:
+                        print("Unknown message type")
+                        continue
+                    if text is not None:
+                        print(f"Sender: {sender}")
+                        print(f"Text: {text}")
 
         except websockets.ConnectionClosed:
             print(f"Connection closed.")
@@ -357,7 +370,6 @@ class Client:
     async def client_handler(self):
         async with websockets.connect(self.server_uri) as websocket:
             await self.send_hello(websocket)
-            await self.request_client_list(websocket)
             await asyncio.gather(
                 self.listen_for_messages(websocket),
                 self.read_inputs(websocket)
