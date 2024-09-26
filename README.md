@@ -4,16 +4,29 @@ This Advanced Secure Programming assignment is designed to help students apply t
 Currently the code is only tested with python 3.12.
 
 ## Execution
+
 Installation
 ```
 pip install -r requirements.txt
+
+pip install websockets
+``````
+
+Open your terminal, navigate to the folder containing your main.html, and run:
+
+```
+python3 -m http.server 8000
+```
+
+Then open browser then go to:
+```
+http://localhost:8000/main.html
 ```
 
 Open your terminal, navigate to the `src` and run:
 ```
 python3 server.py
 ```
-
 Then open another terminal to run:
 ```
 python3 client.py
