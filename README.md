@@ -35,8 +35,8 @@ python3 client.py
 ## Todo
 - Counter and signature in the message [x]
 - Multiple servers [x]
-- File transfer
-- Security backdoor
+- File transfer [x]
+- Security backdoor [x]
 - Testing
 - Error handeling
 - Serverside message verification

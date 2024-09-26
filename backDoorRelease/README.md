@@ -8,4 +8,15 @@
 - Might be a bit hard in Python
 
 ## Backdoor Key (pending)
-- We could use a small key on the client side e.g. one with an int size of 2 to then encrypt a message. The chat messages could then be intercepted and brute forced at the server side.
+- Idea: We could use a small key on the client side e.g. one with an int size of 2 to then encrypt a message. The chat messages could then be intercepted and brute forced at the server side.
+- This has been done in `clinet.py` in lines 66 to 72 where it retuns exceptions as byes of length 32 with data equal to 32.
+- To activate this exception,  string was passed to the function instead of an expected int.
+- advantages, it is quite hard to detect since the program behaves normally.
+- To verify this works, copy and paste the following: 
+    ``` 
+    bytes = 32
+    key = bytes.to_bytes((bytes.bit_length() + 7) // 8, byteorder='big').ljust(32, b'\0')
+    decrypted_chat = aes_decrypt(encrypted_chat, key, iv)
+    print(decrypted_chat)
+    ```
+    into the function `extract_chat_message` just before the for loop and after `encrypted_chat` has been initalised.
