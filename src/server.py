@@ -9,6 +9,7 @@ from Crypto.Signature import pss
 from Crypto.PublicKey import RSA
 from dataclasses import dataclass, field
 import subprocess
+
 @dataclass
 class RemoteServer:
     server_address: str = ""
@@ -45,7 +46,7 @@ class Server:
         self, 
         address="127.0.0.1", 
         port=8000, 
-        neighbourhood_server_addresses=[],
+        remote_servers=[],
     ):
         # Dict of client's public key to its websocket connection
         self.clients = {}
@@ -54,10 +55,7 @@ class Server:
         self.port = port
         self.counter = 0
         self.uri = f"ws://{address}:{port}"
-        self.neighbourhood_servers = [
-            RemoteServer(server_address=address)
-            for address in neighbourhood_server_addresses
-        ]
+        self.neighbourhood_servers = remote_servers
         # Generate RSA Public key and print it so that it can be shared with other servers
         # Printed in base64 encoding so that it can be copied and pasted easily
         self.private_key = RSA.generate(bits=2048, e=65537)
@@ -144,7 +142,7 @@ class Server:
                     if public_key in self.clients:
                         del self.clients[public_key]
                     await self.broadcast_client_update()
-                    print(f"connection closed: {e}")
+                    # print(f"connection closed: {e}")
                 break
 
 
@@ -236,7 +234,7 @@ class Server:
         await websocket.send(json.dumps(full_message))
 
     async def server_handler(self):
-        await self.prompt_for_servers()
+        # await self.prompt_for_servers()
         async with websockets.serve(self.handle_client, self.address, self.port):
             await self.connect_to_neighbourhood()
             print(f"listening on {self.uri}")

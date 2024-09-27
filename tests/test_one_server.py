@@ -5,13 +5,12 @@ import threading
 import json
 import sys
 import os
+import time
 from Crypto.PublicKey import RSA
 
 # Adjust the path to include the src directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-# from server import server_handler
-# from client import send_hello, request_client_list, listen_for_messages
 from server import Server
 from client import Client
 
@@ -34,6 +33,7 @@ def _run_server():
 def run_server():
     thread = threading.Thread(target=_run_server)
     thread.start()
+    time.sleep(1)
     yield thread
     loop.call_soon_threadsafe(server.cancel)
     thread.join()
@@ -41,7 +41,7 @@ def run_server():
 
 @pytest.mark.asyncio
 async def test_single_client_send_hello_and_request_client_list(run_server):
-    server_uri = "ws://localhost:8000"
+    server_uri = "ws://127.0.0.1:8000"
     client = Client(server_uri)
 
     async with websockets.connect(client.server_uri) as websocket:
@@ -64,7 +64,7 @@ async def test_single_client_send_hello_and_request_client_list(run_server):
 
 @pytest.mark.asyncio
 async def test_single_client_send_message_to_self(run_server):
-    server_uri = "ws://localhost:8000"
+    server_uri = "ws://127.0.0.1:8000"
     client = Client(server_uri)
     message_text = "Hello World!"
     
@@ -77,31 +77,56 @@ async def test_single_client_send_message_to_self(run_server):
             [client.public_key],
             message_text
         )
-        received_message = await client.listen_for_chat_message(websocket)
+
+        message = await websocket.recv()
+        message_json = json.loads(message)
+        text, sender = client.extract_chat_message(message_json)
     
-    assert received_message == message_text
+    assert text == message_text
+    assert sender == client.fingerprint
 
 
 @pytest.mark.asyncio
 async def test_single_client_send_message_to_another_client_on_one_server(run_server):
-    server_uri = "ws://localhost:8000"
+    server_uri = "ws://127.0.0.1:8000"
     client1 = Client(server_uri)
     client2 = Client(server_uri)
     message_text = "Hello from client 2!"
+
+    client1_hello_event = asyncio.Event()
+    client2_hello_event = asyncio.Event()
 
     async def run_client_send_hello(client):
         """Client 1: Send hello and listen for chat messages."""
         async with websockets.connect(client.server_uri) as websocket:
             # Send hello to server
             await client.send_hello(websocket)
+            client1_hello_event.set()
+
+            # wait for client 2 to send hello
+            await client2_hello_event.wait()
+
+            # Request client list
+            await client.request_client_list(websocket)
+            message = await websocket.recv()
+            message_json = json.loads(message)
+            client.cache_client_info(message_json)
 
             # Listen for incoming chat messages
-            message = await client.listen_for_chat_message(websocket)
-            return message
+            message = await websocket.recv()
+            message_json = json.loads(message)
+            text, sender = client.extract_chat_message(message_json)
+            return text, sender
 
     async def run_client_request_and_send_chat(client, message_text):
         """Client 2: Request client list and send chat message."""
+        # Let client 1 connects to the server first
+        await client1_hello_event.wait()
         async with websockets.connect(client.server_uri) as websocket:
+            # Send hello to server
+            await client.send_hello(websocket)
+            client2_hello_event.set()
+            
             # Request client list
             await client.request_client_list(websocket)
             message = await websocket.recv()
@@ -127,4 +152,5 @@ async def test_single_client_send_message_to_another_client_on_one_server(run_se
     client1_result, _ = await asyncio.gather(client1_task, client2_task)
 
     # Validate that Client 1 received the chat message from Client 2
-    assert client1_result == message_text
+    assert client1_result[0] == message_text
+    assert client1_result[1] == client2.fingerprint
