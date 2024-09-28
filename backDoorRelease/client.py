@@ -14,6 +14,7 @@ from Crypto.Signature import pss
 from Crypto.Hash import SHA256
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Random import get_random_bytes
+from typing import List
 
 
 # AES Encryption for the message:
@@ -119,8 +120,8 @@ class Client:
     async def send_chat_message(
         self,
         websocket, # websocket to the connected server
-        destination_servers: list[str],
-        recipient_public_keys: list[RSA.RsaKey],
+        destination_servers: List[str],
+        recipient_public_keys: List[RSA.RsaKey],
         message_text: str
     ):
         """Chat format
