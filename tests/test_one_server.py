@@ -133,7 +133,8 @@ async def run_client_recv_message(
         message = await websocket.recv()
         message_json = json.loads(message)
         text, sender = client.extract_chat_message(message_json)
-        return text, sender
+        
+    return text, sender
     
 
 async def run_client_send_message(
@@ -259,7 +260,7 @@ async def test_message_from_unknown_sender(run_server):
         [client1_request_client_list_event],
     )
 
-    # Start both tasks concurrently
+    # Start tasks concurrently
     client1_result, _ = await asyncio.gather(client1_task, client2_task)
 
     # Cannot verify signature of message from unknown sender
@@ -308,7 +309,7 @@ async def test_third_client_does_not_receive_private_message(run_server):
         [client1_request_client_list_event, client2_request_client_list_event]
     )
 
-    # Start both tasks concurrently
+    # Start tasks concurrently
     client1_result, _, client3_result = await asyncio.gather(client1_task, client2_task, client3_task)
 
     # Validate that Client 1 received the chat message from Client 2
@@ -357,19 +358,114 @@ async def test_send_message_to_multiple_clients(run_server):
         [client1_request_client_list_event, client2_request_client_list_event]
     )
 
-    # Start both tasks concurrently
+    # Start tasks concurrently
     client1_result, _, client3_result = await asyncio.gather(client1_task, client2_task, client3_task)
 
-    # Validate that Client 1 received the chat message from Client 2
+    # Validate that Client 1 and Client 3 received the chat message from Client 2
     assert client1_result[0] == message_text
     assert client1_result[1] == client2.fingerprint
     assert client3_result[0] == message_text
     assert client3_result[1] == client2.fingerprint
 
 
-# @pytest.mark.asyncio
-# async def test_multiturn_dialogue(run_server):
-#     pass
+async def send_multiple_messages(
+    client, 
+    websocket, 
+    recipient_public_keys, 
+    messages
+):
+    for message in messages:
+        await client.send_chat_message(
+            websocket,
+            [client.server_uri],
+            recipient_public_keys,
+            message
+        )
+
+
+async def listen_for_multiple_messages(client, websocket, num_message):
+    messages = []
+    for _ in range(num_message):
+        message = await websocket.recv()
+        message_json = json.loads(message)
+        text, sender = client.extract_chat_message(message_json)
+        
+        # Exclude messages from client itself
+        if text is not None:
+            messages.append(text)
+    
+    return messages
+
+
+async def send_multiple_messages_and_listen(
+    client: Client, 
+    messages: list[str],
+    recipient_public_keys: list[RSA.RsaKey],
+    my_hello_event: asyncio.Event, 
+    others_hello_events: list[asyncio.Event],
+    my_request_client_list_event: asyncio.Event,
+    others_request_client_list_events: list[asyncio.Event],
+):
+    async with websockets.connect(client.server_uri) as websocket:
+        await setup_client(
+            client,
+            websocket, 
+            my_hello_event, 
+            others_hello_events,
+            my_request_client_list_event,
+            others_request_client_list_events,
+        )
+        
+        messages, _ = await asyncio.gather(
+            listen_for_multiple_messages(client, websocket, len(messages) * 2),
+            send_multiple_messages(
+                client,
+                websocket,
+                recipient_public_keys, 
+                messages
+            )
+        )
+        
+    return messages
+
+
+@pytest.mark.asyncio
+async def test_multiturn_dialogue(run_server):
+    server_uri = "ws://127.0.0.1:8000"
+    client1 = Client(server_uri)
+    client2 = Client(server_uri)
+    client1_messages = ["Hello from client 1!", "Hello from client 1 again!"]
+    client2_messages = ["Hello from client 2!", "Hello from client 2 again!"]
+
+    client1_hello_event = asyncio.Event()
+    client2_hello_event = asyncio.Event()
+    client1_request_client_list_event = asyncio.Event()
+    client2_request_client_list_event = asyncio.Event()
+
+    client1_task = send_multiple_messages_and_listen(
+        client1,
+        client1_messages,
+        [client2.public_key],
+        client1_hello_event,
+        [client2_hello_event],
+        client1_request_client_list_event,
+        [client2_request_client_list_event],
+    )
+    client2_task = send_multiple_messages_and_listen(
+        client2, 
+        client2_messages,
+        [client1.public_key],
+        client2_hello_event,
+        [client1_hello_event],
+        client2_request_client_list_event,
+        [client1_request_client_list_event],
+    )
+
+    # Start tasks concurrently
+    client1_received_messasges, client2_received_messages = await asyncio.gather(client1_task, client2_task)
+
+    assert client1_received_messasges == client2_messages
+    assert client2_received_messages == client1_messages
 
 
 # @pytest.mark.asyncio(run_server)
