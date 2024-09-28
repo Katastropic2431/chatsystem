@@ -86,8 +86,87 @@ async def test_single_client_send_message_to_self(run_server):
     assert sender == client.fingerprint
 
 
+async def setup_client(
+    client: Client,
+    websocket: object,
+    my_hello_event: asyncio.Event,
+    others_hello_events: list[asyncio.Event],
+    my_request_client_list_event: asyncio.Event,
+    others_request_client_list_events: list[asyncio.Event],
+):
+    # Send hello to server
+    await client.send_hello(websocket)
+    my_hello_event.set()
+
+    # wait for other clients to send hello
+    for hello_event in others_hello_events:
+        await hello_event.wait()
+
+    await client.request_client_list(websocket)
+    message = await websocket.recv()
+    message_json = json.loads(message)
+    client.cache_client_info(message_json)
+    my_request_client_list_event.set()
+
+    for request_event in others_request_client_list_events:
+        await request_event.wait()
+
+
+async def run_client_recv_message(
+    client: Client, 
+    my_hello_event: asyncio.Event, 
+    others_hello_events: list[asyncio.Event],
+    my_request_client_list_event: asyncio.Event,
+    others_request_client_list_events: list[asyncio.Event],
+):
+    async with websockets.connect(client.server_uri) as websocket:
+        await setup_client(
+            client,
+            websocket, 
+            my_hello_event, 
+            others_hello_events,
+            my_request_client_list_event,
+            others_request_client_list_events,
+        )
+
+        # Listen for incoming chat messages
+        message = await websocket.recv()
+        message_json = json.loads(message)
+        text, sender = client.extract_chat_message(message_json)
+        return text, sender
+    
+
+async def run_client_send_message(
+    client: Client, 
+    message_text: str,
+    recipient_public_key: RSA.RsaKey,
+    my_hello_event: asyncio.Event, 
+    others_hello_events: list[asyncio.Event],
+    my_request_client_list_event: asyncio.Event,
+    others_request_client_list_events: list[asyncio.Event],
+):
+    async with websockets.connect(client.server_uri) as websocket:
+        await setup_client(
+            client,
+            websocket, 
+            my_hello_event, 
+            others_hello_events,
+            my_request_client_list_event,
+            others_request_client_list_events,
+        )
+
+        # Send a chat message to the recipient using the public key
+        await client.send_chat_message(
+            websocket,
+            [client.server_uri],
+            [recipient_public_key], 
+            message_text
+        )
+        await websocket.recv()
+
+
 @pytest.mark.asyncio
-async def test_single_client_send_message_to_another_client_on_one_server(run_server):
+async def test_single_client_send_message_to_another_client(run_server):
     server_uri = "ws://127.0.0.1:8000"
     client1 = Client(server_uri)
     client2 = Client(server_uri)
@@ -95,58 +174,26 @@ async def test_single_client_send_message_to_another_client_on_one_server(run_se
 
     client1_hello_event = asyncio.Event()
     client2_hello_event = asyncio.Event()
-
-    async def run_client_send_hello(client):
-        """Client 1: Send hello and listen for chat messages."""
-        async with websockets.connect(client.server_uri) as websocket:
-            # Send hello to server
-            await client.send_hello(websocket)
-            client1_hello_event.set()
-
-            # wait for client 2 to send hello
-            await client2_hello_event.wait()
-
-            # Request client list
-            await client.request_client_list(websocket)
-            message = await websocket.recv()
-            message_json = json.loads(message)
-            client.cache_client_info(message_json)
-
-            # Listen for incoming chat messages
-            message = await websocket.recv()
-            message_json = json.loads(message)
-            text, sender = client.extract_chat_message(message_json)
-            return text, sender
-
-    async def run_client_request_and_send_chat(client, message_text):
-        """Client 2: Request client list and send chat message."""
-        # Let client 1 connects to the server first
-        await client1_hello_event.wait()
-        async with websockets.connect(client.server_uri) as websocket:
-            # Send hello to server
-            await client.send_hello(websocket)
-            client2_hello_event.set()
-            
-            # Request client list
-            await client.request_client_list(websocket)
-            message = await websocket.recv()
-            client_list = json.loads(message)
-
-            # Find the public key of the first client
-            public_key_pem = client_list['servers'][0]['clients'][0]
-            public_key = RSA.import_key(public_key_pem)
-
-            # Send a chat message to the recipient using the public key
-            await client.send_chat_message(
-                websocket,
-                [client.server_uri],
-                [public_key], 
-                message_text
-            )
+    client1_request_client_list_event = asyncio.Event()
+    client2_request_client_list_event = asyncio.Event()
 
     # Run Client 1 (listening for messages) and Client 2 (sending a message)
-    client1_task = run_client_send_hello(client1)
-    client2_task = run_client_request_and_send_chat(client2, message_text)
+    client1_task = run_client_recv_message(
+        client1, 
+        client1_hello_event,
+        [client2_hello_event],
+        client1_request_client_list_event,
+        [client2_request_client_list_event],
+    )
+    client2_task = run_client_send_message(
+        client2, 
+        message_text,
+        client1.public_key,
+        client2_hello_event,
+        [client1_hello_event],
+        client2_request_client_list_event,
+        [client1_request_client_list_event],
+    )
 
     # Start both tasks concurrently
     client1_result, _ = await asyncio.gather(client1_task, client2_task)
@@ -154,3 +201,148 @@ async def test_single_client_send_message_to_another_client_on_one_server(run_se
     # Validate that Client 1 received the chat message from Client 2
     assert client1_result[0] == message_text
     assert client1_result[1] == client2.fingerprint
+
+
+@pytest.mark.asyncio
+async def test_message_from_unknown_sender(run_server):
+    async def run_client_recv_message_no_client_info(
+        client: Client, 
+        my_hello_event: asyncio.Event, 
+        others_hello_events: list[asyncio.Event],
+        my_request_client_list_event: asyncio.Event,
+        others_request_client_list_events: list[asyncio.Event],
+    ):
+        async with websockets.connect(client.server_uri) as websocket:
+            await setup_client(
+                client,
+                websocket, 
+                my_hello_event, 
+                others_hello_events,
+                my_request_client_list_event,
+                others_request_client_list_events,
+            )
+
+            # Simulate that the client has no information about the other clients
+            client.fingerprint_to_public_key = {}
+
+            # Listen for incoming chat messages
+            message = await websocket.recv()
+            message_json = json.loads(message)
+            text, sender = client.extract_chat_message(message_json)
+            return text, sender
+    
+    server_uri = "ws://127.0.0.1:8000"
+    client1 = Client(server_uri)
+    client2 = Client(server_uri)
+    message_text = "Hello from client 2!"
+
+    client1_hello_event = asyncio.Event()
+    client2_hello_event = asyncio.Event()
+    client1_request_client_list_event = asyncio.Event()
+    client2_request_client_list_event = asyncio.Event()
+
+    # Run Client 1 (listening for messages) and Client 2 (sending a message)
+    client1_task = run_client_recv_message_no_client_info(
+        client1, 
+        client1_hello_event,
+        [client2_hello_event],
+        client1_request_client_list_event,
+        [client2_request_client_list_event],
+    )
+    client2_task = run_client_send_message(
+        client2, 
+        message_text,
+        client1.public_key,
+        client2_hello_event,
+        [client1_hello_event],
+        client2_request_client_list_event,
+        [client1_request_client_list_event],
+    )
+
+    # Start both tasks concurrently
+    client1_result, _ = await asyncio.gather(client1_task, client2_task)
+
+    # Validate that Client 1 received the chat message from Client 2
+    assert client1_result[0] == None
+    assert client1_result[1] == None
+
+
+@pytest.mark.asyncio
+async def test_third_client_does_not_receive_private_message(run_server):
+    """One client sends a message to another client. The third client should not receive the message."""
+
+    server_uri = "ws://127.0.0.1:8000"
+    client1 = Client(server_uri)
+    client2 = Client(server_uri)
+    client3 = Client(server_uri)
+    message_text = "Hello from client 2!"
+
+    client1_hello_event = asyncio.Event()
+    client2_hello_event = asyncio.Event()
+    client3_hello_event = asyncio.Event()
+    client1_request_client_list_event = asyncio.Event()
+    client2_request_client_list_event = asyncio.Event()
+    client3_request_client_list_event = asyncio.Event()
+
+    client1_task = run_client_recv_message(
+        client1, 
+        client1_hello_event,
+        [client2_hello_event, client3_hello_event],
+        client1_request_client_list_event,
+        [client2_request_client_list_event, client3_request_client_list_event]
+    )
+    client2_task = run_client_send_message(
+        client2, 
+        message_text,
+        client1.public_key,
+        client2_hello_event,
+        [client1_hello_event, client3_hello_event],
+        client2_request_client_list_event,
+        [client1_request_client_list_event, client3_request_client_list_event]
+    )
+    client3_task = run_client_recv_message(
+        client3, 
+        client3_hello_event,
+        [client1_hello_event, client2_hello_event],
+        client3_request_client_list_event,
+        [client1_request_client_list_event, client2_request_client_list_event]
+    )
+
+    # Start both tasks concurrently
+    client1_result, _, client3_result = await asyncio.gather(client1_task, client2_task, client3_task)
+
+    # Validate that Client 1 received the chat message from Client 2
+    assert client1_result[0] == message_text
+    assert client1_result[1] == client2.fingerprint
+    assert client3_result[0] == None
+    assert client3_result[1] == None
+
+
+# @pytest.mark.asyncio
+# async def test_send_message_to_multiple_clients(run_server):
+#     pass
+
+
+# @pytest.mark.asyncio
+# async def test_multiturn_dialogue(run_server):
+#     pass
+
+
+# @pytest.mark.asyncio(run_server)
+# async def test_public_chat(run_server):
+#     pass
+
+
+# @pytest.mark.asyncio
+# async def test_check_for_relay_attack(run_server):
+#     pass
+
+
+# @pytest.mark.asyncio
+# async def test_send_message_to_offline_client(run_server):
+#     pass
+
+
+# @pytest.mark.asyncio
+# async def test_upload_and_download_file(run_server):
+#     pass
