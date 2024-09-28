@@ -139,7 +139,7 @@ async def run_client_recv_message(
 async def run_client_send_message(
     client: Client, 
     message_text: str,
-    recipient_public_key: RSA.RsaKey,
+    recipient_public_keys: list[RSA.RsaKey],
     my_hello_event: asyncio.Event, 
     others_hello_events: list[asyncio.Event],
     my_request_client_list_event: asyncio.Event,
@@ -159,7 +159,7 @@ async def run_client_send_message(
         await client.send_chat_message(
             websocket,
             [client.server_uri],
-            [recipient_public_key], 
+            recipient_public_keys, 
             message_text
         )
         await websocket.recv()
@@ -188,7 +188,7 @@ async def test_single_client_send_message_to_another_client(run_server):
     client2_task = run_client_send_message(
         client2, 
         message_text,
-        client1.public_key,
+        [client1.public_key],
         client2_hello_event,
         [client1_hello_event],
         client2_request_client_list_event,
@@ -252,7 +252,7 @@ async def test_message_from_unknown_sender(run_server):
     client2_task = run_client_send_message(
         client2, 
         message_text,
-        client1.public_key,
+        [client1.public_key],
         client2_hello_event,
         [client1_hello_event],
         client2_request_client_list_event,
@@ -262,7 +262,7 @@ async def test_message_from_unknown_sender(run_server):
     # Start both tasks concurrently
     client1_result, _ = await asyncio.gather(client1_task, client2_task)
 
-    # Validate that Client 1 received the chat message from Client 2
+    # Cannot verify signature of message from unknown sender
     assert client1_result[0] == None
     assert client1_result[1] == None
 
@@ -294,7 +294,7 @@ async def test_third_client_does_not_receive_private_message(run_server):
     client2_task = run_client_send_message(
         client2, 
         message_text,
-        client1.public_key,
+        [client1.public_key],
         client2_hello_event,
         [client1_hello_event, client3_hello_event],
         client2_request_client_list_event,
@@ -318,9 +318,53 @@ async def test_third_client_does_not_receive_private_message(run_server):
     assert client3_result[1] == None
 
 
-# @pytest.mark.asyncio
-# async def test_send_message_to_multiple_clients(run_server):
-#     pass
+@pytest.mark.asyncio
+async def test_send_message_to_multiple_clients(run_server):
+    server_uri = "ws://127.0.0.1:8000"
+    client1 = Client(server_uri)
+    client2 = Client(server_uri)
+    client3 = Client(server_uri)
+    message_text = "Hello from client 2!"
+
+    client1_hello_event = asyncio.Event()
+    client2_hello_event = asyncio.Event()
+    client3_hello_event = asyncio.Event()
+    client1_request_client_list_event = asyncio.Event()
+    client2_request_client_list_event = asyncio.Event()
+    client3_request_client_list_event = asyncio.Event()
+
+    client1_task = run_client_recv_message(
+        client1, 
+        client1_hello_event,
+        [client2_hello_event, client3_hello_event],
+        client1_request_client_list_event,
+        [client2_request_client_list_event, client3_request_client_list_event]
+    )
+    client2_task = run_client_send_message(
+        client2, 
+        message_text,
+        [client1.public_key, client3.public_key],
+        client2_hello_event,
+        [client1_hello_event, client3_hello_event],
+        client2_request_client_list_event,
+        [client1_request_client_list_event, client3_request_client_list_event]
+    )
+    client3_task = run_client_recv_message(
+        client3, 
+        client3_hello_event,
+        [client1_hello_event, client2_hello_event],
+        client3_request_client_list_event,
+        [client1_request_client_list_event, client2_request_client_list_event]
+    )
+
+    # Start both tasks concurrently
+    client1_result, _, client3_result = await asyncio.gather(client1_task, client2_task, client3_task)
+
+    # Validate that Client 1 received the chat message from Client 2
+    assert client1_result[0] == message_text
+    assert client1_result[1] == client2.fingerprint
+    assert client3_result[0] == message_text
+    assert client3_result[1] == client2.fingerprint
 
 
 # @pytest.mark.asyncio
