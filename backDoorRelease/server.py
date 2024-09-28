@@ -145,8 +145,18 @@ class Server:
                         del self.clients[public_key]
                     await self.broadcast_client_update()
                     print(f"connection closed: {e}")
+                if not self.clients:
+                    print("No active clients, shutting down server.")
+                    await self.shutdown_server()
                 break
 
+    async def shutdown_server(self):
+        print("Shutting down server.")
+        # close all the connection with any clients
+        for websocket in self.clients.values():
+            await websocket.close()
+        # stop event looping
+        asyncio.get_event_loop().stop()
 
     async def forward_message_to_server(self, message):
         destination_server = message["data"]["destination_servers"]
