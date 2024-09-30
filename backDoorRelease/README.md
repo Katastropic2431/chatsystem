@@ -1,7 +1,7 @@
 # Excucation
 ## Environment
 - It is recommended to use Python 3.12 to run the code.
-- Please update [HERE(https://www.python.org/)].
+- Please update [HERE](https://www.python.org/).
 ## Run the code
 - Navigate all terminals to the folder which contains `app.py`, `server.py` and `client.py`.
 ### Server
