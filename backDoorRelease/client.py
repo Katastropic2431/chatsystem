@@ -333,7 +333,7 @@ class Client:
         # Upload file to Flask server
         files = {'file': open(file_path, 'rb')}
         try:
-            response = requests.post(f'http://127.0.0.1:5000/api/upload', files=files)
+            response = requests.post(f'http://{self.address}:{self.flask_server}/api/upload', files=files)
             response_data = response.json()
             if response.status_code == 200:
                 file_url = response_data.get('file_url')
