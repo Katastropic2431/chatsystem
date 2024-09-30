@@ -1,25 +1,25 @@
 # Excucation
 ## Environment
-- It is recommended to use Python 3.12 to run the code.
+- It is recommended to use **Python 3.12** to run the code.
 - Please update [HERE](https://www.python.org/).
 ## Run the code
-- Navigate all terminals to the folder which contains `app.py`, `server.py` and `client.py`.
+- **Navigate all terminals to the folder which contains `app.py`, `server.py` and `client.py`**.
 ### Server
 - In one terminal, run:
     ```
     python3 server.py
     ```
-- You will then be asked to enter a Host Address. For the first address, we recommend to use `127.0.0.1`.
-- You then need to enter the Host port. For the first port, we recommend to use `8000`.
-- You then need to enter the websocket for flask server. If it is the first one, ignore this and simply click `enter`.
-- If you know there exists other servers, input `y`, otherwise, `N` (Be careful about the caopital and small letter).
+- You will then be asked to enter a **Host Address**. For the first address, we recommend to use `127.0.0.1`.
+- You then need to enter the **Host port**. For the first port, we recommend to use `8000`.
+- You then need to enter the **websocket for flask server**. If it is the first one, *ignore* this and simply click <kbd>enter</kbd>.
+- If you know there exists other servers, input `y`, otherwise, `N` (Be careful about the capital and small letter).
 ### Client
 - In another terminal, run:
     ```
     python3 client.py
     ```
-- You will be asked to enter the address that your server has. i.e. for the first one, you could enter `127.0.0.1`.
-- Then enter the port number (i.e.`8000`).
+- You will be asked to enter the **address** that your server has. i.e. for the first one, you could enter `127.0.0.1`.
+- Then enter the **port number** (i.e.`8000`).
 - Done! You can now choose your actions!
     > 1. Request client list
     > 2. Send message
