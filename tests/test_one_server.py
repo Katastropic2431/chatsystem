@@ -97,6 +97,8 @@ async def setup_simulators(clients):
         simulator = ClientSimulator(client)
         other_hello_events = hello_events[:i] + hello_events[i+1:]
         other_request_client_list_events = request_client_list_events[:i] + request_client_list_events[i+1:]
+        # Send hello and client list request to server,
+        # and wait for other clients to finish
         setup = simulator.setup(
             hello_events[i],
             other_hello_events,
@@ -179,6 +181,7 @@ async def test_third_client_does_not_receive_private_message(run_server):
     await close_connections(simulators)
 
     # Validate that Client 1 received the chat message from Client 2
+    # Client 3 should not receive any message
     assert client1_result[0] == message_text
     assert client1_result[1] == client2.fingerprint
     assert client3_result[0] == None
@@ -231,6 +234,7 @@ async def test_multiturn_dialogue(run_server):
 
     await close_connections(simulators)
 
+    # Validate Client 1 receives all the messages from Client 2, and vice versa
     assert client1_result[0] == client2_messages
     assert client2_result[0] == client1_messages
 
@@ -253,7 +257,7 @@ async def test_public_chat(run_server):
 
     await close_connections(simulators)
 
-    # Validate that Client 1 and Client 3 received the chat message from Client 2
+    # Validate that Client 1 and Client 3 received the public message from Client 2
     assert client1_result[0] == message_text
     assert client1_result[1] == client2.fingerprint
     assert client3_result[0] == message_text
@@ -268,6 +272,7 @@ async def test_check_for_relay_attack(run_server):
     messages = ["First message from client 1", "Replay attack message from client 1"]
 
     simulators = await setup_simulators([client1, client2])
+    # Send two messages, with the counter of the second message set to 0
     client1_task = simulators[0].simulate_relay_attack(messages, [client2.public_key])
     client2_task = simulators[1].recv_multiple_messages(num_message=2)
 
@@ -281,11 +286,24 @@ async def test_check_for_relay_attack(run_server):
     assert len(senders) == 1
 
 
-# @pytest.mark.asyncio
-# async def test_send_message_to_offline_client(run_server):
-#     pass
+@pytest.mark.asyncio
+async def test_send_message_to_offline_client(run_server):
+    server_uri = "ws://127.0.0.1:8000"
+    client1 = Client(server_uri)
+    client2 = Client(server_uri)
+    message_text = "message from client 1"
+
+    simulators = await setup_simulators([client1, client2])
+    # Validate sending a message to an offline client would not cause any exception
+    client1_task = simulators[0].sleep_and_send_message(message_text, [client2.public_key])
+    client2_task = simulators[1].quit()
+
+    # Start tasks concurrently
+    await asyncio.gather(client1_task, client2_task)
+
+    await simulators[0].quit()
 
 
-# @pytest.mark.asyncio
-# async def test_upload_and_download_file(run_server):
-#     pass
+@pytest.mark.asyncio
+async def test_upload_and_download_file(run_server):
+    pass

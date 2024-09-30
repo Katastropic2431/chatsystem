@@ -24,16 +24,18 @@ class ClientSimulator:
         await self.client.send_hello(websocket)
         my_hello_event.set()
 
-        # wait for other clients to send hello
+        # Wait for other clients to send hello
         for hello_event in others_hello_events:
             await hello_event.wait()
 
+        # Send request_client_list to server
         await self.client.request_client_list(websocket)
         message = await websocket.recv()
         message_json = json.loads(message)
         self.client.cache_client_info(message_json)
         my_request_client_list_event.set()
 
+        # Wait for other clients to send request_client_list
         for request_event in others_request_client_list_events:
             await request_event.wait()
 
@@ -44,7 +46,6 @@ class ClientSimulator:
 
     async def recv_message(self):
         # Listen for incoming chat messages
-        print('listening for message')
         message = await self.websocket.recv()
         message_json = json.loads(message)
         if message_json["data"]["type"] == "chat":
@@ -88,6 +89,12 @@ class ClientSimulator:
             )
 
         await self.websocket.recv()
+
+
+    async def sleep_and_send_message(self, message_text, recipient_public_keys):
+        # wait for another client to quit
+        await asyncio.sleep(1)
+        await self.send_message(message_text, recipient_public_keys)
 
 
     async def simulate_relay_attack(self, messages, recipient_public_keys):

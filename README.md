@@ -44,7 +44,7 @@ python3 client.py
 
 ## Some Notes
 - Reading user input should be an asychronous operation to avoid blocking the whole process
-- The tests are not working right now
+- Sometimes the tests may fail due to incomplete setup for the server. Increase the sleep time in pytest fixture `run_server` to allow the setup thread to finish.
 - You need to request client list on client side when everyone joins before you can begin sending messages.
 
 ## Running
@@ -68,3 +68,71 @@ Once the server are running, they need to be given an address and a port, this i
 - Given you did all those steps properly, the servers are now connected.
 
 - You can now add clients to terminals 1 and 2 seperately and talk to each other.
+
+## Test Overview
+
+The test suite is organized in the file `tests/test_one_server.py` and is designed to verify the correctness of client-server interactions in a WebSocket environment. It utilizes the `pytest` framework and includes asynchronous tests using the `pytest.mark.asyncio` decorator. The tests cover multiple scenarios involving message exchange between clients and the server, ensuring the system behaves as expected in both normal and edge cases.
+
+### Running the Tests
+
+To run the tests, use the following command:
+
+```bash
+pytest tests
+```
+
+Use -k option for running a single test. For example,
+```bash
+pytest -k test_public_chat
+```
+
+### Test Fixtures
+   - **`run_server`**: This fixture initializes and runs the WebSocket server in a separate thread, ensuring it is available for all test cases. After the tests complete, the server is gracefully shut down.
+
+### Test Cases
+
+- **`test_single_client_send_hello_and_request_client_list`**  
+  This test simulates a single client connecting to the server, sending a "hello" message, and requesting the client list from the server. It asserts that the server responds with a list containing only the connecting client.
+
+- **`test_single_client_send_message_to_self`**  
+  A client connects to the server and sends a chat message to itself. The test ensures that the client receives its own message correctly, validating that the message content and sender are correct.
+
+- **`test_single_client_send_message_to_another_client`**  
+  Two clients connect to the server. Client 2 sends a message to Client 1, and the test verifies that Client 1 receives the message. The correct content and sender details are asserted.
+
+- **`test_message_from_unknown_sender`**  
+  This test ensures that if a message is received from an unknown client (i.e., a client whose public key is not cached), the system cannot verify the signature. The test confirms that both the message and sender are `None`.
+
+- **`test_third_client_does_not_receive_private_message`**  
+  When one client sends a private message to another, a third connected client should not receive the message. This test checks that only the intended recipient gets the message, and the third client receives no communication.
+
+- **`test_send_message_to_multiple_clients`**  
+  A client sends a message to multiple recipients (Client 1 and Client 3). The test confirms that both clients receive the message with the correct sender details.
+
+- **`test_multiturn_dialogue`**  
+  In this test, two clients engage in a multi-turn dialogue, each sending multiple messages. The test ensures that all messages are exchanged correctly and that both clients receive the expected sequence of messages.
+
+- **`test_public_chat`**  
+  This test simulates a public chat where a message is sent to all connected clients. The test ensures that all clients receive the public message from the sender.
+
+- **`test_check_for_relay_attack`**  
+  This test simulates a replay attack scenario where the same message is sent twice with an invalid counter. It verifies that the receiving client detects the replay attack and only processes the valid message.
+
+- **`test_send_message_to_offline_client`**  
+  The test validates that sending a message to an offline client does not cause any errors. The client attempts to send a message after the recipient has disconnected, ensuring that the system handles the situation gracefully.
+
+- **`test_upload_and_download_file`**  
+  Placeholder for future implementation to test file upload and download functionality between the client and server.
+
+### Supporting Class: ClientSimulator
+
+The `ClientSimulator` class, defined in `tests/client_simulator.py`, is used to simulate client behavior during tests. It provides methods for setting up WebSocket connections, sending and receiving messages, and handling more advanced scenarios such as replay attacks and multi-client message distribution.
+
+- **`setup()`**: Initializes a simulated client, sends a hello message, and requests the client list from the server. It also handles synchronization between multiple clients.
+- **`quit()`**: Closes the WebSocket connection.
+- **`recv_message()`**: Listens for incoming messages and extracts chat or public chat messages.
+- **`recv_multiple_messages()`**: Waits for a specified number of messages to be received.
+- **`send_message()`**: Sends either a private or public chat message to other clients.
+- **`simulate_relay_attack()`**: Simulates a replay attack by sending a message with an invalid counter.
+- **`send_multiple_messages_and_listen()`**: Sends multiple messages and listens for responses from other clients.
+
