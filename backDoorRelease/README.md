@@ -1,4 +1,4 @@
-# Excucation
+# Execution
 ## Environment
 - It is recommended to use **Python 3.12** to run the code.
 - Please update [HERE](https://www.python.org/).
