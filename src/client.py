@@ -15,7 +15,6 @@ from Crypto.Hash import SHA256
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Random import get_random_bytes
 
-
 # AES Encryption for the message:
 def aes_encrypt(message: str, key: bytes, iv: bytes) -> str:
     cipher = AES.new(key, AES.MODE_GCM, iv)
@@ -80,12 +79,14 @@ def get_fingerprint(public_key: RSA.RsaKey) -> str:
 
 
 class Client:
-    def __init__(self, server_uri):
+    def __init__(self, config):
         # Generate or load RSA keys
+        self.server_uri = f"ws://{config['address']}:{config['port']}"
         self.private_key = RSA.generate(bits=2048, e=65537)
         self.public_key = self.private_key.publickey()
         self.fingerprint = get_fingerprint(self.public_key)
-        self.server_uri = server_uri
+        self.flask_server = config['flask_server']
+        self.address = config['address']
         self.client_info = {} # mapping each client's public key to its server
         self.fingerprint_to_public_key = {} # mapping each client's fingerprint to its public key
         self.fingerprint_to_public_key[self.fingerprint] = self.public_key.export_key().decode("utf-8") # Add the client's own public key
@@ -324,7 +325,7 @@ class Client:
         # Upload file to Flask server
         files = {'file': open(file_path, 'rb')}
         try:
-            response = requests.post(f'http://127.0.0.1:5000/api/upload', files=files)
+            response = requests.post(f'http://{self.address}:{self.flask_server}/api/upload', files=files)
             response_data = response.json()
             if response.status_code == 200:
                 file_url = response_data.get('file_url')
@@ -440,9 +441,9 @@ class Client:
 if __name__ == '__main__':
     prompt = [
         inquirer.Text("address", message="Server address", default="127.0.0.1"),
-        inquirer.Text("port", message="Server port", default="8000")
+        inquirer.Text("port", message="Server port", default="8000"),
+        inquirer.Text("flask_server", message="Enter the port of the Flask server: ", default="5000")
     ]
     config = inquirer.prompt(prompt)
-    server_uri = f"ws://{config['address']}:{config['port']}"
-    client = Client(server_uri)
+    client = Client(config)
     asyncio.run(client.client_handler())

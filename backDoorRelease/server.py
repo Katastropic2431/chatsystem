@@ -293,11 +293,14 @@ if __name__ == "__main__":
     prompt = [
         inquirer.Text("address", message="Host address", default="127.0.0.1"),
         inquirer.Text("port", message="Host port", default="8000"),
-        inquirer.Text("Flask server", message="Websocket for Flask server (You only need one running leave empty, if you are creating more than 1 servers) 5000 is default", default="")
+        inquirer.Text("Flask server", message="Specify Port for Flask Server, 5000 is default (Only need to create 1 instance of the Flask Ferver)", default="")
     ]
     config = inquirer.prompt(prompt)
     if config["Flask server"] != "":
-        subprocess.Popen(f'python3 app.py {config["Flask server"]}', shell=True)
+        if os.name == 'nt':
+            subprocess.Popen(f'python app.py {config["Flask server"]}', shell=True)
+        else:
+            subprocess.Popen(f'python3 app.py {config["Flask server"]}', shell=True)
     server = Server(config["address"], config["port"])
     
     asyncio.run(server.server_handler())
