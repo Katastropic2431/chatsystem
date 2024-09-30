@@ -15,7 +15,6 @@ from Crypto.Hash import SHA256
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Random import get_random_bytes
 
-global config
 # AES Encryption for the message:
 def aes_encrypt(message: str, key: bytes, iv: bytes) -> str:
     cipher = AES.new(key, AES.MODE_GCM, iv)
@@ -88,12 +87,14 @@ def get_fingerprint(public_key: RSA.RsaKey) -> str:
 
 
 class Client:
-    def __init__(self, server_uri):
+    def __init__(self, config):
         # Generate or load RSA keys
+        self.server_uri = f"ws://{config['address']}:{config['port']}"
         self.private_key = RSA.generate(bits=2048, e=65537)
         self.public_key = self.private_key.publickey()
         self.fingerprint = get_fingerprint(self.public_key)
-        self.server_uri = server_uri
+        self.flask_server = config['flask_server']
+        self.address = config['address']
         self.client_info = {} # mapping each client's public key to its server
         self.fingerprint_to_public_key = {} # mapping each client's fingerprint to its public key
         self.fingerprint_to_public_key[self.fingerprint] = self.public_key.export_key().decode("utf-8") # Add the client's own public key
@@ -454,5 +455,5 @@ if __name__ == '__main__':
     
     config = inquirer.prompt(prompt)
     server_uri = f"ws://{config['address']}:{config['port']}"
-    client = Client(server_uri)
+    client = Client(config)
     asyncio.run(client.client_handler())
