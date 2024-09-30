@@ -15,7 +15,7 @@ from Crypto.Hash import SHA256
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Random import get_random_bytes
 
-
+global config
 # AES Encryption for the message:
 def aes_encrypt(message: str, key: bytes, iv: bytes) -> str:
     cipher = AES.new(key, AES.MODE_GCM, iv)
@@ -448,8 +448,10 @@ class Client:
 if __name__ == '__main__':
     prompt = [
         inquirer.Text("address", message="Server address", default="127.0.0.1"),
-        inquirer.Text("port", message="Server port", default="8000")
+        inquirer.Text("port", message="Server port", default="8000"),
+        inquirer.Text("flask_server", message="Enter the port of the Flask server: ", default="5000")
     ]
+    
     config = inquirer.prompt(prompt)
     server_uri = f"ws://{config['address']}:{config['port']}"
     client = Client(server_uri)
