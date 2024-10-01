@@ -9,16 +9,17 @@ Installation
 pip install websockets
 ```
 
-Open your terminal, navigate to the `src` and run:
-```
-python server.py
-```
+Open your terminal run the command below:
 
-Then open another terminal to run:
+```
+python3 -m http.server 8000
+```
+The frontend website should appear at this address here:
 ```
 http://localhost:8000/main.html
 ```
-Run server with:
+Then open another terminal run server with:
 ```
 python3 server.py
 ```
+****
