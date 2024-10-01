@@ -254,7 +254,7 @@ class Server:
         answer = inquirer.prompt(prompt)
         if answer["has_neighbourhood"]:
             while True:
-                server_address = inquirer.prompt([inquirer.Text("server_address", message="Enter the address of the neighboring server (or leave blank to finish)", default="127.0.0.1:8000")])["server_address"]
+                server_address = inquirer.prompt([inquirer.Text("server_address", message="Enter the address of the neighboring server in the form: address:port (or leave blank to finish)", default="")])["server_address"]
                 if not server_address: break
                 server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
                 if not server_public_key: break
