@@ -23,7 +23,7 @@
     ```
     python3 client.py
     ```
-- You will be asked to enter the **address** that your server has. i.e. for the first one, you could enter `127.0.0.1`.
+- You will be asked to enter the **address** that your server has. It should **match** servers you've started i.e. `127.0.0.1`.
 - Then enter the **port number** (i.e.`8000`).
 - Done! You can now choose your actions!
     > 1. Request client list
