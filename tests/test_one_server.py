@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 
 from server import Server
 from client import Client
-from client_simulator import ClientSimulator
+from client_simulator import setup_simulators, close_connections
 
 
 # https://stackoverflow.com/questions/76488582/python-proper-way-to-run-an-async-routine-in-a-pytest-fixture
@@ -88,36 +88,6 @@ async def test_single_client_send_message_to_self(run_server):
     assert sender == client.fingerprint
 
 
-async def setup_simulators(clients):
-    hello_events = [asyncio.Event() for _ in range(len(clients))]
-    request_client_list_events = [asyncio.Event() for _ in range(len(clients))]
-    
-    simulators, setup_tasks = [], []
-    for i, client in enumerate(clients):
-        simulator = ClientSimulator(client)
-        other_hello_events = hello_events[:i] + hello_events[i+1:]
-        other_request_client_list_events = request_client_list_events[:i] + request_client_list_events[i+1:]
-        # Send hello and client list request to server,
-        # and wait for other clients to finish
-        setup = simulator.setup(
-            hello_events[i],
-            other_hello_events,
-            request_client_list_events[i],
-            other_request_client_list_events
-        )
-
-        simulators.append(simulator)
-        setup_tasks.append(setup)
-
-    await asyncio.gather(*setup_tasks)
-    return simulators
-
-
-async def close_connections(simulators):
-    for s in simulators:
-        await s.quit()
-
-
 @pytest.mark.asyncio
 async def test_single_client_send_message_to_another_client(run_server):
     server_uri = "ws://127.0.0.1:8000"
@@ -127,7 +97,11 @@ async def test_single_client_send_message_to_another_client(run_server):
 
     simulators = await setup_simulators([client1, client2])
     client1_task = simulators[0].recv_message()
-    client2_task = simulators[1].send_message(message_text, [client1.public_key])
+    client2_task = simulators[1].send_message_and_listen(
+        message_text,
+        [client1.server_uri], 
+        [client1.public_key]
+    )
 
     # Start both tasks concurrently
     client1_result, _ = await asyncio.gather(client1_task, client2_task)
@@ -148,7 +122,11 @@ async def test_message_from_unknown_sender(run_server):
 
     simulators = await setup_simulators([client1, client2])
     client1_task = simulators[0].recv_message_no_client_info()
-    client2_task = simulators[1].send_message(message_text, [client1.public_key])
+    client2_task = simulators[1].send_message_and_listen(
+        message_text,
+        [client1.server_uri], 
+        [client1.public_key]
+    )
 
     # Start tasks concurrently
     client1_result, _ = await asyncio.gather(client1_task, client2_task)
@@ -172,7 +150,11 @@ async def test_third_client_does_not_receive_private_message(run_server):
 
     simulators = await setup_simulators([client1, client2, client3])
     client1_task = simulators[0].recv_message()
-    client2_task = simulators[1].send_message(message_text, [client1.public_key])
+    client2_task = simulators[1].send_message_and_listen(
+        message_text, 
+        [client1.server_uri],
+        [client1.public_key]
+    )
     client3_task = simulators[2].recv_message()
 
     # Start tasks concurrently
@@ -198,7 +180,11 @@ async def test_send_message_to_multiple_clients(run_server):
 
     simulators = await setup_simulators([client1, client2, client3])
     client1_task = simulators[0].recv_message()
-    client2_task = simulators[1].send_message(message_text, [client1.public_key, client3.public_key])
+    client2_task = simulators[1].send_message_and_listen(
+        message_text,
+        [client1.server_uri, client3.server_uri], 
+        [client1.public_key, client3.public_key]
+    )
     client3_task = simulators[2].recv_message()
 
     # Start tasks concurrently
@@ -223,10 +209,14 @@ async def test_multiturn_dialogue(run_server):
 
     simulators = await setup_simulators([client1, client2])
     client1_task = simulators[0].send_multiple_messages_and_listen(
-        client1_messages, [client2.public_key]
+        client1_messages, 
+        [client2.server_uri], 
+        [client2.public_key]
     )
     client2_task = simulators[1].send_multiple_messages_and_listen(
-        client2_messages, [client1.public_key]
+        client2_messages, 
+        [client1.server_uri],
+        [client1.public_key]
     )
 
     # Start tasks concurrently
@@ -249,7 +239,7 @@ async def test_public_chat(run_server):
 
     simulators = await setup_simulators([client1, client2, client3])
     client1_task = simulators[0].recv_message()
-    client2_task = simulators[1].send_message(message_text)
+    client2_task = simulators[1].send_message_and_listen(message_text)
     client3_task = simulators[2].recv_message()
 
     # Start tasks concurrently
@@ -273,7 +263,11 @@ async def test_check_for_relay_attack(run_server):
 
     simulators = await setup_simulators([client1, client2])
     # Send two messages, with the counter of the second message set to 0
-    client1_task = simulators[0].simulate_relay_attack(messages, [client2.public_key])
+    client1_task = simulators[0].simulate_relay_attack(
+        messages,
+        [client2.server_uri], 
+        [client2.public_key]
+    )
     client2_task = simulators[1].recv_multiple_messages(num_message=2)
 
     # Start tasks concurrently
@@ -295,15 +289,14 @@ async def test_send_message_to_offline_client(run_server):
 
     simulators = await setup_simulators([client1, client2])
     # Validate sending a message to an offline client would not cause any exception
-    client1_task = simulators[0].sleep_and_send_message(message_text, [client2.public_key])
+    client1_task = simulators[0].sleep_and_send_message(
+        message_text,
+        [client2.server_uri], 
+        [client2.public_key]
+    )
     client2_task = simulators[1].quit()
 
     # Start tasks concurrently
     await asyncio.gather(client1_task, client2_task)
 
     await simulators[0].quit()
-
-
-@pytest.mark.asyncio
-async def test_upload_and_download_file(run_server):
-    pass

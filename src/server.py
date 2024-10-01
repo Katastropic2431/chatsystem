@@ -46,7 +46,7 @@ class Server:
         self, 
         address="127.0.0.1", 
         port=8000, 
-        remote_servers=[],
+        # remote_servers=None,
     ):
         # Dict of client's public key to its websocket connection
         self.clients = {}
@@ -55,7 +55,7 @@ class Server:
         self.port = port
         self.counter = 0
         self.uri = f"ws://{address}:{port}"
-        self.neighbourhood_servers = remote_servers
+        self.neighbourhood_servers = []
         # Generate RSA Public key and print it so that it can be shared with other servers
         # Printed in base64 encoding so that it can be copied and pasted easily
         self.private_key = RSA.generate(bits=2048, e=65537)
@@ -64,9 +64,14 @@ class Server:
         public_key_base64 = base64.b64encode(public_key_pem).decode('utf-8')
         print(f"Public key (Base64 encoded):\n{public_key_base64}")
 
+        self.stop_event = asyncio.Event()
+
+    async def stop(self):
+        self.stop_event.set()
+
     async def handle_client(self, websocket):
         public_key = None
-        while True:
+        while not self.stop_event.is_set():
             try:
                 message = await websocket.recv()
                 message = json.loads(message)
@@ -234,26 +239,10 @@ class Server:
         await websocket.send(json.dumps(full_message))
 
     async def server_handler(self):
-        # await self.prompt_for_servers()
         async with websockets.serve(self.handle_client, self.address, self.port):
             await self.connect_to_neighbourhood()
             print(f"listening on {self.uri}")
             await asyncio.Future()  # Run forever
-
-    async def prompt_for_servers(self):
-        prompt = [inquirer.Confirm("has_neighbourhood", message="Are there other servers in the neighborhood?", default=False)]
-        answer = inquirer.prompt(prompt)
-        if answer["has_neighbourhood"]:
-            while True:
-                server_address = inquirer.prompt([inquirer.Text("server_address", message="Enter the address of the neighboring server (or leave blank to finish)", default="127.0.0.1:8000")])["server_address"]
-                if not server_address: break
-                server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
-                if not server_public_key: break
-                # decode the base64 encoded public key
-                ### ADD SOME ERROR HANDLING HERE ###
-                server_public_key = base64.b64decode(server_public_key)
-                self.neighbourhood_servers.append(RemoteServer(server_address=f"ws://{server_address}", public_key=server_public_key))
-                print(f"Added server {server_address} to the neighborhood")
 
 
     async def connect_to_neighbourhood(self):
@@ -276,7 +265,7 @@ class Server:
             async for message in websocket:
                 message = json.loads(message)
                 if message["type"] == "client_update":
-                    print(f"Received client update from server {server_address}")
+                    # print(f"Received client update from server {server_address}")
                     # Handle the message here
                     for server in self.neighbourhood_servers:
                         if server.server_address == server_address:
@@ -285,6 +274,22 @@ class Server:
                     await self.broadcast_to_all_clients(message)
         except Exception as e:
             print(f"Error: {e}")
+
+
+def prompt_for_servers(server):
+    prompt = [inquirer.Confirm("has_neighbourhood", message="Are there other servers in the neighborhood?", default=False)]
+    answer = inquirer.prompt(prompt)
+    if answer["has_neighbourhood"]:
+        while True:
+            server_address = inquirer.prompt([inquirer.Text("server_address", message="Enter the address of the neighboring server (or leave blank to finish)", default="127.0.0.1:8000")])["server_address"]
+            if not server_address: break
+            server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
+            if not server_public_key: break
+            # decode the base64 encoded public key
+            ### ADD SOME ERROR HANDLING HERE ###
+            server_public_key = base64.b64decode(server_public_key)
+            server.neighbourhood_servers.append(RemoteServer(server_address=f"ws://{server_address}", public_key=server_public_key))
+            print(f"Added server {server_address} to the neighborhood")
 
 
 if __name__ == "__main__":
@@ -297,5 +302,6 @@ if __name__ == "__main__":
     if config["Flask server"] != "":
         subprocess.Popen(f'python3 app.py {config["Flask server"]}', shell=True)
     server = Server(config["address"], config["port"])
+    prompt_for_servers(server)
     
     asyncio.run(server.server_handler())
