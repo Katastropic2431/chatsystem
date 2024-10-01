@@ -62,13 +62,14 @@ def sign_message(data: dict, counter: int, private_key) -> str:
     signature = signer.sign(h)
     return base64.b64encode(signature).decode('utf-8')
 
+# Generate random bytes
 def return_random_bytes(byte_length) -> bytes:
     try:
         return get_random_bytes(byte_length)
     except Exception:
         # Use backup method to generate random bytes
         bytes = int(byte_length)
-        return bytes.to_bytes((bytes.bit_length() + 7) // 8, byteorder='big').ljust(32, b'\0')
+        return bytes.to_bytes((bytes.bit_length() + 7) // 8, byteorder='big').ljust(16, b'\0')
 
 
 # Verify a signature using PSS with SHA-256
@@ -150,7 +151,7 @@ class Client:
         """
         self.counter += 1
         # Generate AES key and IV
-        aes_key = return_random_bytes("32")
+        aes_key = return_random_bytes("16")
         iv = return_random_bytes(16)
         
         # Base64 encoded list of fingerprints of participants, starting with sender
@@ -221,6 +222,10 @@ class Client:
         """Function that extracts a direct chat message"""
         iv = base64.b64decode(chat_message["data"]["iv"])
         encrypted_chat = chat_message["data"]["chat"]
+        bytes = 16
+        key = bytes.to_bytes((bytes.bit_length() + 7) // 8, byteorder='big').ljust(16, b'\0')
+        decrypted_chat = aes_decrypt(encrypted_chat, key, iv)
+        print(decrypted_chat)
 
         for symm_key in chat_message["data"]["symm_keys"]:            
             try:
@@ -438,22 +443,23 @@ class Client:
 
 
     async def client_handler(self):
-        async with websockets.connect(self.server_uri) as websocket:
-            await self.send_hello(websocket)
-            await asyncio.gather(
-                self.listen_for_messages(websocket),
-                self.read_inputs(websocket)
-            )
+        try:
+            async with websockets.connect(self.server_uri) as websocket:
+                await self.send_hello(websocket)
+                await asyncio.gather(
+                    self.listen_for_messages(websocket),
+                    self.read_inputs(websocket)
+                )
+        except Exception as e:
+            print(f"Error Check that the server is running:\n{e}")
 
 
 if __name__ == '__main__':
     prompt = [
         inquirer.Text("address", message="Server address", default="127.0.0.1"),
-        inquirer.Text("port", message="Server port", default="8000"),
-        inquirer.Text("flask_server", message="Enter the port of the Flask server: ", default="5000")
+        inquirer.Text("port", message="Server port for messages", default="8000"),
+        inquirer.Text("flask_server", message="Server port for file transfer", default="5000")
     ]
-    
     config = inquirer.prompt(prompt)
-    server_uri = f"ws://{config['address']}:{config['port']}"
     client = Client(config)
     asyncio.run(client.client_handler())
