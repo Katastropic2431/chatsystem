@@ -279,6 +279,19 @@ class Client:
             for client in server["clients"]:
                 self.client_info[client] = server["address"]
                 self.fingerprint_to_public_key[get_fingerprint(RSA.import_key(client))] = client
+
+    def print_client_info(self):
+        # print your own public key and fingerprint
+        print(f"Your fingerprint: {self.fingerprint}")
+        print(f"Your public key: {self.public_key.export_key().decode('utf-8')}")
+        print("\n")
+        # print the public keys and fingerprints and servers of other clients
+        print("Public keys and fingerprints of other clients:")
+        for fingerprint in self.fingerprint_to_public_key:
+            print(f"Fingerprint: {fingerprint}")
+            print(f"Server: {self.client_info[self.fingerprint_to_public_key[fingerprint]]}") 
+            print(f"Public key: {self.fingerprint_to_public_key[fingerprint]}")
+            print("\n")
     
     async def listen_for_messages(self, websocket):
         try:
@@ -288,7 +301,7 @@ class Client:
 
                 if message_json["type"] == "client_list":
                     self.cache_client_info(message_json)   
-                    print(json.dumps(message_json, indent=2))
+                    self.print_client_info()
                 elif message_json["type"] == "signed_data":
                     if message_json["data"]["type"] == "chat":
                         text, sender = self.extract_chat_message(message_json)
