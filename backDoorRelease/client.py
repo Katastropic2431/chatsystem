@@ -222,11 +222,7 @@ class Client:
         """Function that extracts a direct chat message"""
         iv = base64.b64decode(chat_message["data"]["iv"])
         encrypted_chat = chat_message["data"]["chat"]
-        bytes = 16
-        key = bytes.to_bytes((bytes.bit_length() + 7) // 8, byteorder='big').ljust(16, b'\0')
-        decrypted_chat = aes_decrypt(encrypted_chat, key, iv)
-        print(decrypted_chat)
-
+        
         for symm_key in chat_message["data"]["symm_keys"]:            
             try:
                 aes_key = rsa_decrypt_aes_key(symm_key, self.private_key)
