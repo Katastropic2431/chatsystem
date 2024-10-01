@@ -9,6 +9,8 @@ from Crypto.Signature import pss
 from Crypto.PublicKey import RSA
 from dataclasses import dataclass, field
 import subprocess
+import os
+
 @dataclass
 class RemoteServer:
     server_address: str = ""
@@ -235,8 +237,13 @@ class Server:
         }
         await websocket.send(json.dumps(full_message))
 
-    async def server_handler(self):
+    async def server_handler(self, config):
         await self.prompt_for_servers()
+        # Start the Flask server in a separate process
+        if os.name == 'nt':
+            subprocess.Popen(["python", "app.py", config["Flask server"]])
+        else:
+            subprocess.Popen(["python3", "app.py", config["Flask server"]])
         async with websockets.serve(self.handle_client, self.address, self.port):
             await self.connect_to_neighbourhood()
             print(f"listening on {self.uri}")
@@ -252,7 +259,6 @@ class Server:
                 server_public_key = input("Enter the public key of the neighboring server in base64 encoding (or leave blank to finish): ")
                 if not server_public_key: break
                 # decode the base64 encoded public key
-                ### ADD SOME ERROR HANDLING HERE ###
                 server_public_key = base64.b64decode(server_public_key)
                 self.neighbourhood_servers.append(RemoteServer(server_address=f"ws://{server_address}", public_key=server_public_key))
                 print(f"Added server {server_address} to the neighborhood")
@@ -292,15 +298,9 @@ class Server:
 if __name__ == "__main__":
     prompt = [
         inquirer.Text("address", message="Host address", default="127.0.0.1"),
-        inquirer.Text("port", message="Host port", default="8000"),
-        inquirer.Text("Flask server", message="Specify Port for Flask Server, 5000 is default (Only need to create 1 instance of the Flask Ferver)", default="")
+        inquirer.Text("port", message="Host port for messages", default="8000"),
+        inquirer.Text("Flask server", message="Host port for file transfers", default="5000")
     ]
     config = inquirer.prompt(prompt)
-    if config["Flask server"] != "":
-        if os.name == 'nt':
-            subprocess.Popen(f'python app.py {config["Flask server"]}', shell=True)
-        else:
-            subprocess.Popen(f'python3 app.py {config["Flask server"]}', shell=True)
     server = Server(config["address"], config["port"])
-    
-    asyncio.run(server.server_handler())
+    asyncio.run(server.server_handler(config))

