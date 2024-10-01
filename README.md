@@ -1,73 +1,103 @@
-# chatsystem
-This Advanced Secure Programming assignment is designed to help students apply the theoretical concepts covered in the lectures/RangeForce and learn about practice secure programming. This assignment is a group work assignment.  In groups of 2-4 students, you will engage in a hands-on assignment that requires the design, development, and evaluation of a secure overlay chat system utilising a standardised protocol created by all the students in this class. This system must adhere to class-specified protocol, have a secure implementation, have the secured implementation intentionally and ethically "backdoored", and then be tested in a controlled code review process. The course concludes with a friendly hackathon exercise.
+# Chatsystem
+This Advanced Secure Programming assignment is designed to help students apply the theoretical concepts covered in the lectures/RangeForce and learn about practice secure programming. This assignment is a group work assignment.
 
-Currently the code is only tested with python 3.12.
+## **Contact**
+**You can contact us through the secure programming discord server or via email:**
+- [stefan.parenti@student.adelaide.edu.au](mailto:stefan.parenti@student.adelaide.edu.au)
+- [tun-hsiang.chou@student.adelaide.edu.au](mailto:tun-hsiang.chou@student.adelaide.edu.au)
+- [nathan.do@student.adelaide.edu.au](mailto:nathan.do@student.adelaide.edu.au)
+- [ruian.zhou@student.adelaide.edu.au](mailto:ruian.zhou@student.adelaide.edu.au)
 
-## Execution
 
-Installation
+**Discord Server (Secure Programming - protocol design):**
+1. Stefan Parenti: SA.Shroud
+2. Nathan Do: Katastropic
+
+## File Structure
+The repository include four folders
 ```
-pip install -r requirements.txt
-
-pip install websockets
-``````
-
-Open your terminal, navigate to the folder containing your main.html, and run:
-
-```
-python3 -m http.server 8000
-```
-
-Then open browser then go to:
-```
-http://localhost:8000/main.html
-```
-
-Open your terminal, navigate to the `src` and run:
-```
-python3 server.py
-```
-Then open another terminal to run:
-```
-python3 client.py
+src/                        # Src folders without any backdoors
+├── client.py                   # Python client 
+├── server.py                   # Python server
+└── app.py                      # Flask server
+backDoorRelease/            # Backdoor folder with 2 known backdoors 
+├── client.py                   # Python client 
+├── server.py                   # Python server
+├── app.py                      # Flask server
+└── README.md                   # Explains the backdoors we implemented
+decrepcated/                # Decrepcated code that we aren't using due to difficulty with javaScript
+├── chat.js                     # Python client 
+├── client.py                   # Python server
+├── main.html                   # Flask server
+└── README.md                   # Explains how to run the decrepated code
+tests/                      # Unit Test
+├── client_simulator.py         # Simulator for client 
+├── test_file_transfer.py       # Test for file transfers
+├── test_multi_server.py        # Test for Multiple Servers
+└── test_one_server.py          # Tests for one server
 ```
 
-## Todo
-- Counter and signature in the message [x]
-- Multiple servers [x]
-- File transfer [x]
-- Security backdoor [x]
-- Testing
-- Error handeling
-- Serverside message verification
-- Fix up terminal output
+###
 
-## Some Notes
-- Reading user input should be an asychronous operation to avoid blocking the whole process
-- Sometimes the tests may fail due to incomplete setup for the server. Increase the sleep time in pytest fixture `run_server` to allow the setup thread to finish.
-- You need to request client list on client side when everyone joins before you can begin sending messages.
+## Installation
+This Assignment is using Python 3.12. It is recommended to use **Python 3.12** to run the code.
+1. **Install Python 3.12**:
+    - If you haven't installed Python 3.12, you can download it from the official [Python website](https://www.python.org/downloads/).
 
-## Running
-Once the server are running, they need to be given an address and a port, this is defaulted to `127.0.0.1` and port `8000`. It is reccomended to stay on `127.0.0.1` for the purposes of testing. by hitting enter for both options you will be presented with the base64 encoding of the server's public key and wil be asked if you would like to add any of the other servers to the neighbourhood. If you hit "y" you will then be asked to provide the address of a server in the neighbourhood which should be in the form `{address}:{port}`. Once enter you will then be asked to enter that server's base64 public key, this needs to be copy and pasted from the cli of the neighbouring server. 
+2. **Set up your environment**:
+    - Navigate to the folder containing `app.py`, `server.py`, and `client.py` in your terminal.
+    
+3. **Install the required dependencies**:
+    - Run the following command to install the necessary Python libraries listed in the `requirements.txt` file:
+      ```bash
+      pip install -r requirements.txt
+      ```
 
-### Example workflow for making a neighbourhood of 2 servers 
-- Open up 2 terminals
-- in terminal 1 run `server.py`
-- in terminal 1 leave address on `127.0.0.1` and hit enter
-- in terminal 1 leave port on `8000` and hit enter
-- in terminal 2 run `server.py`
-- in terminal 2 leave address on `127.0.0.1` and hit enter
-- in terminal 2 change port to `8001` and hit enter
-- in terminal 2 input the neighbouting addres as `127.0.0.1:8000` and hit enter
-- copy the public key initally generated by terminal 1 into the input of terminal 2 and click enter.
-- in terminal 2 hit enter until the websocket begins running
-- in terminal 1 input the neighbouting addres as `127.0.0.1:8001` and hit enter
-- copy the public key initally generated by terminal 2 into the input of terminal 1 and click enter.
-- in terminal 2 hit enter until the websocket begins running
+Once you've completed these steps, you will have everything needed to run the program.
 
-- Given you did all those steps properly, the servers are now connected.
+## Server
+1. Open a terminal and run the following command:
+    ```bash
+    python3 server.py
+    ```
 
-- You can now add clients to terminals 1 and 2 seperately and talk to each other.
+2. You will be prompted to enter a **Host Address**. For the first time setup, we recommend using `127.0.0.1`.
+
+3. Next, you will be asked to enter the **Host Port**. We suggest using `8000` for the initial configuration.
+
+4. You will then be prompted to provide the **WebSocket address for the Flask server**. Since you only need one Flask server, you can skip this by simply pressing <kbd>Enter</kbd>.
+
+5. If you are aware of other servers running, type `y`, otherwise type `n`.
+
+6. Enter the addresses of any neighborhood servers (leave it blank if there are none or when you're done).
+
+## Client
+1. Open another terminal and run the following command:
+    ```bash
+    python3 client.py
+    ```
+
+2. You will be prompted to enter the **address** of your server. This should **match** the address you used when starting the server, e.g., `127.0.0.1`.
+
+3. Next, you will need to enter the **port number**, such as `8000`, which should **match** the port used by the server you are trying to connect to.
+
+4. Then, enter the **Flask port number** that you initially set when running `server.py`.
+
+5. That’s it! You can now choose from the available actions:
+    > 1. Request client list  
+    > 2. Send message  
+    > 3. Upload file  
+    > 4. Download file  
+    > 5. Quit
+
+### File Transfer (Extra Details)
+
+1. **Upload**
+   - Enter the **absolute full path** of the file you wish to upload.
+
+2. **Download**
+   - Enter the download URL in the format: `http://127.0.0.1/uploads/api/{filename}`, where `127.0.0.1` is the **sender's Host address**.
+   - The downloaded file will be saved in the `/tmp/downloads/` directory.
 
 ## Test Overview
 
