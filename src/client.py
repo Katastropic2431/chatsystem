@@ -15,7 +15,6 @@ from Crypto.Hash import SHA256
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Random import get_random_bytes
 
-
 # AES Encryption for the message:
 def aes_encrypt(message: str, key: bytes, iv: bytes) -> str:
     cipher = AES.new(key, AES.MODE_GCM, iv)
@@ -80,12 +79,14 @@ def get_fingerprint(public_key: RSA.RsaKey) -> str:
 
 
 class Client:
-    def __init__(self, server_uri):
+    def __init__(self, config):
         # Generate or load RSA keys
+        self.server_uri = f"ws://{config['address']}:{config['port']}"
         self.private_key = RSA.generate(bits=2048, e=65537)
         self.public_key = self.private_key.publickey()
         self.fingerprint = get_fingerprint(self.public_key)
-        self.server_uri = server_uri
+        self.flask_server = config['flask_server']
+        self.address = config['address']
         self.client_info = {} # mapping each client's public key to its server
         self.fingerprint_to_public_key = {} # mapping each client's fingerprint to its public key
         self.fingerprint_to_public_key[self.fingerprint] = self.public_key.export_key().decode("utf-8") # Add the client's own public key
@@ -141,7 +142,7 @@ class Client:
         """
         self.counter += 1
         # Generate AES key and IV
-        aes_key = get_random_bytes(32)
+        aes_key = get_random_bytes(16)
         iv = get_random_bytes(16)
         
         # Base64 encoded list of fingerprints of participants, starting with sender
@@ -268,7 +269,20 @@ class Client:
             for client in server["clients"]:
                 self.client_info[client] = server["address"]
                 self.fingerprint_to_public_key[get_fingerprint(RSA.import_key(client))] = client
-    
+
+    def print_client_info(self):
+        # print your own public key and fingerprint
+        print(f"Your fingerprint: {self.fingerprint}")
+        print(f"Your public key: {self.public_key.export_key().decode('utf-8')}")
+        print("\n")
+        # print the public keys and fingerprints and servers of other clients
+        print("Public keys and fingerprints of other clients:")
+        for fingerprint in self.fingerprint_to_public_key:
+            print(f"Fingerprint: {fingerprint}")
+            print(f"Server: {self.client_info[self.fingerprint_to_public_key[fingerprint]]}") 
+            print(f"Public key: {self.fingerprint_to_public_key[fingerprint]}")
+            print("\n")
+
     async def listen_for_messages(self, websocket):
         try:
             while True:
@@ -277,7 +291,7 @@ class Client:
 
                 if message_json["type"] == "client_list":
                     self.cache_client_info(message_json)   
-                    print(json.dumps(message_json, indent=2))
+                    self.print_client_info()
                 elif message_json["type"] == "signed_data":
                     if message_json["data"]["type"] == "chat":
                         text, sender = self.extract_chat_message(message_json)
@@ -323,7 +337,7 @@ class Client:
         # Upload file to Flask server
         files = {'file': open(file_path, 'rb')}
         try:
-            response = requests.post(f'http://127.0.0.1:5000/api/upload', files=files)
+            response = requests.post(f'http://{self.address}:{self.flask_server}/api/upload', files=files)
             response_data = response.json()
             if response.status_code == 200:
                 file_url = response_data.get('file_url')
@@ -428,20 +442,23 @@ class Client:
 
 
     async def client_handler(self):
-        async with websockets.connect(self.server_uri) as websocket:
-            await self.send_hello(websocket)
-            await asyncio.gather(
-                self.listen_for_messages(websocket),
-                self.read_inputs(websocket)
-            )
+        try:
+            async with websockets.connect(self.server_uri) as websocket:
+                await self.send_hello(websocket)
+                await asyncio.gather(
+                    self.listen_for_messages(websocket),
+                    self.read_inputs(websocket)
+                )
+        except Exception as e:
+            print(f"Error Check that the server is running:\n{e}")
 
 
 if __name__ == '__main__':
     prompt = [
         inquirer.Text("address", message="Server address", default="127.0.0.1"),
-        inquirer.Text("port", message="Server port", default="8000")
+        inquirer.Text("port", message="Server port for messages", default="8000"),
+        inquirer.Text("flask_server", message="Server port for file transfer", default="5000")
     ]
     config = inquirer.prompt(prompt)
-    server_uri = f"ws://{config['address']}:{config['port']}"
-    client = Client(server_uri)
+    client = Client(config)
     asyncio.run(client.client_handler())

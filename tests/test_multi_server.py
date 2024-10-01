@@ -69,10 +69,16 @@ def run_servers():
 
 @pytest.mark.asyncio
 async def test_client_send_message_to_another_client_on_two_servers(run_servers):
-    server_uri_1 = "ws://127.0.0.1:8000"
-    server_uri_2 = "ws://127.0.0.1:8001"
-    client1 = Client(server_uri_1)
-    client2 = Client(server_uri_2)
+    client1 = Client(config = {
+        "address": "127.0.0.1",
+        "port": 8000,
+        "flask_server": 5000,
+    })
+    client2 = Client(config = {
+        "address": "127.0.0.1",
+        "port": 8001,
+        "flask_server": 5000,
+    })
     message_text = "Hello from client 2!"
 
     simulators = await setup_simulators([client1, client2])

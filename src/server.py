@@ -9,6 +9,7 @@ from Crypto.Signature import pss
 from Crypto.PublicKey import RSA
 from dataclasses import dataclass, field
 import subprocess
+import os
 
 @dataclass
 class RemoteServer:
@@ -295,12 +296,17 @@ def prompt_for_servers(server):
 if __name__ == "__main__":
     prompt = [
         inquirer.Text("address", message="Host address", default="127.0.0.1"),
-        inquirer.Text("port", message="Host port", default="8000"),
-        inquirer.Text("Flask server", message="Websocket for Flask server (You only need one running leave empty, if you are creating more than 1 servers) 5000 is default", default="")
+        inquirer.Text("port", message="Host port for messages", default="8000"),
+        inquirer.Text("Flask server", message="Host port for file transfers", default="5000")
     ]
     config = inquirer.prompt(prompt)
-    if config["Flask server"] != "":
-        subprocess.Popen(f'python3 app.py {config["Flask server"]}', shell=True)
+    
+    # Start the Flask server in a separate process
+    if os.name == 'nt':
+        subprocess.Popen(["python", "app.py", config["Flask server"]])
+    else:
+        subprocess.Popen(["python3", "app.py", config["Flask server"]])
+    
     server = Server(config["address"], config["port"])
     prompt_for_servers(server)
     

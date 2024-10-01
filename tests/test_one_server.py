@@ -40,11 +40,15 @@ def run_server():
     loop.call_soon_threadsafe(server.cancel)
     thread.join()
 
+config = {
+    "address": "127.0.0.1",
+    "port": 8000,
+    "flask_server": 5000,
+}
 
 @pytest.mark.asyncio
 async def test_single_client_send_hello_and_request_client_list(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client = Client(server_uri)
+    client = Client(config=config)
 
     async with websockets.connect(client.server_uri) as websocket:
         # Send hello message
@@ -66,8 +70,7 @@ async def test_single_client_send_hello_and_request_client_list(run_server):
 
 @pytest.mark.asyncio
 async def test_single_client_send_message_to_self(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client = Client(server_uri)
+    client = Client(config=config)
     message_text = "Hello World!"
     
     async with websockets.connect(client.server_uri) as websocket:
@@ -75,7 +78,7 @@ async def test_single_client_send_message_to_self(run_server):
         await client.send_hello(websocket)
         await client.send_chat_message(
             websocket, 
-            [server_uri],
+            [client.server_uri],
             [client.public_key],
             message_text
         )
@@ -90,9 +93,8 @@ async def test_single_client_send_message_to_self(run_server):
 
 @pytest.mark.asyncio
 async def test_single_client_send_message_to_another_client(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
     message_text = "Hello from client 2!"
 
     simulators = await setup_simulators([client1, client2])
@@ -115,9 +117,8 @@ async def test_single_client_send_message_to_another_client(run_server):
 
 @pytest.mark.asyncio
 async def test_message_from_unknown_sender(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
     message_text = "Hello from client 2!"
 
     simulators = await setup_simulators([client1, client2])
@@ -141,11 +142,9 @@ async def test_message_from_unknown_sender(run_server):
 @pytest.mark.asyncio
 async def test_third_client_does_not_receive_private_message(run_server):
     """One client sends a message to another client. The third client should not receive the message."""
-
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
-    client3 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
+    client3 = Client(config=config)
     message_text = "Hello from client 2!"
 
     simulators = await setup_simulators([client1, client2, client3])
@@ -172,10 +171,9 @@ async def test_third_client_does_not_receive_private_message(run_server):
 
 @pytest.mark.asyncio
 async def test_send_message_to_multiple_clients(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
-    client3 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
+    client3 = Client(config=config)
     message_text = "Hello from client 2!"
 
     simulators = await setup_simulators([client1, client2, client3])
@@ -201,9 +199,8 @@ async def test_send_message_to_multiple_clients(run_server):
 
 @pytest.mark.asyncio
 async def test_multiturn_dialogue(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
     client1_messages = ["Hello from client 1!", "Hello from client 1 again!"]
     client2_messages = ["Hello from client 2!", "Hello from client 2 again!"]
 
@@ -231,10 +228,9 @@ async def test_multiturn_dialogue(run_server):
 
 @pytest.mark.asyncio
 async def test_public_chat(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
-    client3 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
+    client3 = Client(config=config)
     message_text = "Hello from client 2!"
 
     simulators = await setup_simulators([client1, client2, client3])
@@ -256,9 +252,8 @@ async def test_public_chat(run_server):
 
 @pytest.mark.asyncio
 async def test_check_for_relay_attack(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
     messages = ["First message from client 1", "Replay attack message from client 1"]
 
     simulators = await setup_simulators([client1, client2])
@@ -282,9 +277,8 @@ async def test_check_for_relay_attack(run_server):
 
 @pytest.mark.asyncio
 async def test_send_message_to_offline_client(run_server):
-    server_uri = "ws://127.0.0.1:8000"
-    client1 = Client(server_uri)
-    client2 = Client(server_uri)
+    client1 = Client(config=config)
+    client2 = Client(config=config)
     message_text = "message from client 1"
 
     simulators = await setup_simulators([client1, client2])
