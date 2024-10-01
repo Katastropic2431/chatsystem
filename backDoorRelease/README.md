@@ -15,8 +15,8 @@
     python3 server.py
     ```
 - You will then be asked to enter a **Host Address**. For the first address, we recommend to use `127.0.0.1`.
-- You then need to enter the **Host port**. For the first port, we recommend to use `8000`.
-- You then need to enter the **websocket for flask server**. If it is the first one, *ignore* this and simply click <kbd>enter</kbd>.
+- You then need to enter the **Host Port**. For the first port, we recommend to use `8000`.
+- You then need to enter the **websocket for flask server**. If it is the first one, *ignore* this and simply click <kbd>Enter</kbd>.
 - If you know there exists other servers, input `y`, otherwise, `N` (Be careful about the capital and small letter).
 ## Client
 - In another terminal, run:
